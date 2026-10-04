@@ -189,3 +189,10 @@ p{text-wrap:pretty}
 .eyebrow{text-transform:none;letter-spacing:.02em;font-size:15px}
 @media (max-width:960px){.card--lead{grid-column:1/-1}}
 @media (max-width:720px){.card--lead{grid-column:auto}}
+
+/* Анимированный фон героя */
+.hero{position:relative;overflow:hidden;background:var(--bg)}
+.hero__in{position:relative;z-index:1}
+.bends{position:absolute;inset:0;width:100%;height:100%;display:block;opacity:.55;
+  -webkit-mask-image:linear-gradient(#000 55%,transparent);mask-image:linear-gradient(#000 55%,transparent)}
+.hero .lead{color:#c9c9d1}
