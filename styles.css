@@ -165,3 +165,8 @@ details p{color:var(--muted);padding:0 0 24px;max-width:64ch}
   .faq{margin-top:72px}
   .plan__for{min-height:0}
 }
+
+/* Tap targets >= 44px */
+.logo,.footer a,.menu a{display:inline-flex;align-items:center;min-height:44px}
+.menu a{min-height:44px}
+.footer__in p a{min-height:44px}
