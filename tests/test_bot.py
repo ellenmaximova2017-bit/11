@@ -139,3 +139,21 @@ def test_topup_requires_subscription_and_web_exposes_credits():
             assert r.status == 200
             assert (await (await c.get("/api/me", headers=h)).json())["credits"] == 150
     run(go())
+
+
+def test_places_sorted_filtered_and_location_fallback(monkeypatch):
+    from bot import services
+    async def fake_overpass(q):
+        return {"elements": [
+            {"lat": 54.7200, "lon": 55.9500, "tags": {"name": "Далеко", "cuisine": "italian"}},
+            {"lat": 54.7101, "lon": 55.9501, "tags": {"name": "Близко", "cuisine": "georgian;italian", "addr:street": "Ленина", "addr:housenumber": "1"}},
+            {"center": {"lat": 54.7105, "lon": 55.9505}, "tags": {"name": "Way-кафе"}},
+            {"lat": 54.71, "lon": 55.95, "tags": {}},  # без названия — пропускаем
+        ]}
+    monkeypatch.setattr(services, "_overpass", fake_overpass)
+    res = run(services.nearby_places(54.71, 55.95, cuisine="italian"))
+    assert [r["name"] for r in res] == ["Близко", "Далеко"] and res[0]["address"] == "Ленина, 1"
+    assert services.haversine(54.71, 55.95, 54.71, 55.95) == 0
+    assert "Нужен адрес" in run(tools.run("find_places", {}, tools.Ctx(1, bot=None)))
+    out = run(tools.run("find_places", {"cuisine": "italian"}, tools.Ctx(1, bot=None, location=(54.71, 55.95))))
+    assert "Близко" in out and "yandex.ru/maps" in out

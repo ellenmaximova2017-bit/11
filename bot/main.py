@@ -7,7 +7,8 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import (
     CallbackQuery, FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice,
-    MenuButtonWebApp, Message, PreCheckoutQuery, WebAppInfo,
+    KeyboardButton, MenuButtonWebApp, Message, PreCheckoutQuery, ReplyKeyboardMarkup, ReplyKeyboardRemove,
+    WebAppInfo,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiohttp import web
@@ -23,6 +24,7 @@ PLANS = pricing.PLANS
 WELCOME_IMG = Path(__file__).resolve().parent.parent / "assets" / "welcome.png"
 current: dict[int, str] = {}        # user_id -> выбранный сценарий
 last_image: dict[int, bytes] = {}   # user_id -> последнее фото (для edit_photo)
+last_location: dict[int, tuple[float, float]] = {}  # только в памяти, в базу не пишем
 locks: dict[int, asyncio.Lock] = {}
 PRIVATE = F.chat.type == "private"
 GROUP = F.chat.type.in_({"group", "supergroup"})
@@ -87,7 +89,7 @@ async def balance(m: Message):
 WELCOME = (
     "<b>Что умеет этот бот?</b>\nИИ, который общается и делает за тебя\n\n"
     "Например:\n📦 Продать на Авито\n💰 Найти клиентов\n🛒 Купить выгоднее\n📄 Разобрать договор\n"
-    "🎨 Поправить фото\n\nИ ещё десятки сценариев. Можно писать текстом, голосом, слать фото и PDF.\n"
+    "🎨 Поправить фото\n🍽 Найти ресторан рядом\n\nИ ещё десятки сценариев. Можно писать текстом, голосом, слать фото и PDF.\n"
     "Первые {n} запроса бесплатно."
 )
 
@@ -110,7 +112,9 @@ async def start(m: Message, command: CommandObject):
                 pass
     if arg.startswith("sc_") and arg[3:] in SCENARIOS:  # пришли из Mini App
         current[uid] = arg[3:]
-        await m.answer(SCENARIOS[arg[3:]]["ask"])
+        kb = (ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="📍 Отправить геопозицию", request_location=True)]],
+                                  resize_keyboard=True, one_time_keyboard=True) if arg[3:] == "food" else None)
+        await m.answer(SCENARIOS[arg[3:]]["ask"], reply_markup=kb)
         return
     text = WELCOME.format(n=config.FREE_MESSAGES)
     if WELCOME_IMG.exists():
@@ -193,7 +197,11 @@ async def calendar(m: Message):
 async def pick(c: CallbackQuery):
     key = c.data[3:]
     current[c.from_user.id] = key
-    await c.message.answer(SCENARIOS[key]["ask"])
+    kb = None
+    if key == "food":
+        kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="📍 Отправить геопозицию", request_location=True)]],
+                                 resize_keyboard=True, one_time_keyboard=True)
+    await c.message.answer(SCENARIOS[key]["ask"], reply_markup=kb)
     await c.answer()
 
 
@@ -319,7 +327,7 @@ async def _work(m, uid, text, attachment, note, user, paid_user):
         try:
             await db.save(uid, "user", note + text)
             key = user["model"] if (user["model"] != "pro" or paid_user) else "std"
-            ctx = tools.Ctx(uid, bot, last_image.get(uid))
+            ctx = tools.Ctx(uid, bot, last_image.get(uid), last_location.get(uid))
             answer = await ai.ask(
                 await db.history(uid), SCENARIOS.get(current.get(uid, ""), {}).get("prompt"),
                 attachment, ctx, config.MODELS.get(key, config.MODELS["std"])[1], await db.facts(uid),
@@ -338,6 +346,14 @@ async def _work(m, uid, text, attachment, note, user, paid_user):
 @dp.message(F.text, PRIVATE, ~F.text.startswith("/"))
 async def handle(m: Message):
     await run(m, m.text)
+
+
+@dp.message(F.location, PRIVATE)
+async def handle_location(m: Message):
+    last_location[m.from_user.id] = (m.location.latitude, m.location.longitude)
+    current.setdefault(m.from_user.id, "food")
+    await m.answer("📍 Принял. Геопозицию храню только в памяти бота, пока он работает.", reply_markup=ReplyKeyboardRemove())
+    await run(m, "Найди, где поесть рядом с моей геопозицией.")
 
 
 @dp.message(F.photo, PRIVATE)

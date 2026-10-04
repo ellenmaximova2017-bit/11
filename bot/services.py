@@ -1,6 +1,7 @@
 """Внешние сервисы: Instagram (Apify), правка фото (Replicate), голос (Whisper), публикация сайтов."""
 import asyncio
 import base64
+import math
 import re
 import secrets
 from pathlib import Path
@@ -90,3 +91,62 @@ def publish_site(html: str) -> str:
     Path(config.SITES_DIR).mkdir(parents=True, exist_ok=True)
     (Path(config.SITES_DIR) / f"{slug}.html").write_text(html, encoding="utf-8")
     return f"{config.WEBAPP_URL.rstrip('/')}/s/{slug}"
+
+
+UA = {"User-Agent": "earnings-bot/1.0 (telegram assistant)"}  # требование Nominatim
+
+
+async def geocode(address: str) -> tuple[float, float, str]:
+    async with aiohttp.ClientSession(headers=UA, timeout=aiohttp.ClientTimeout(total=20)) as s, s.get(
+        "https://nominatim.openstreetmap.org/search",
+        params={"q": address, "format": "json", "limit": 1, "accept-language": "ru"},
+    ) as r:
+        if r.status != 200:
+            raise RuntimeError(f"Геокодер вернул {r.status}")
+        data = await r.json()
+    if not data:
+        raise RuntimeError("Адрес не найден, попроси уточнить (город, улица, дом)")
+    return float(data[0]["lat"]), float(data[0]["lon"]), data[0]["display_name"]
+
+
+async def _overpass(query: str) -> dict:
+    async with aiohttp.ClientSession(headers=UA, timeout=aiohttp.ClientTimeout(total=40)) as s, s.post(
+        "https://overpass-api.de/api/interpreter", data={"data": query}
+    ) as r:
+        if r.status != 200:
+            raise RuntimeError(f"Overpass вернул {r.status}")
+        return await r.json()
+
+
+def haversine(lat1, lon1, lat2, lon2) -> int:
+    """Расстояние в метрах."""
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    a = math.sin((p2 - p1) / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(math.radians(lon2 - lon1) / 2) ** 2
+    return round(6371000 * 2 * math.asin(math.sqrt(a)))
+
+
+KINDS = {"restaurant", "cafe", "fast_food", "bar", "pub"}
+
+
+async def nearby_places(lat: float, lon: float, kind: str = "restaurant", cuisine: str = "",
+                        radius: int = 1000, limit: int = 10) -> list[dict]:
+    kind = kind if kind in KINDS else "restaurant"
+    radius = max(100, min(int(radius), 3000))
+    q = f'[out:json][timeout:25];nwr["amenity"="{kind}"](around:{radius},{lat},{lon});out center 80;'
+    out = []
+    for el in (await _overpass(q)).get("elements", []):
+        t = el.get("tags", {})
+        if not t.get("name"):
+            continue
+        plat = el.get("lat") or el.get("center", {}).get("lat")
+        plon = el.get("lon") or el.get("center", {}).get("lon")
+        if plat is None or (cuisine and cuisine.lower() not in t.get("cuisine", "").lower()):
+            continue
+        addr = ", ".join(x for x in (t.get("addr:street"), t.get("addr:housenumber")) if x)
+        out.append({
+            "name": t["name"], "cuisine": t.get("cuisine", ""), "address": addr,
+            "distance_m": haversine(lat, lon, plat, plon), "hours": t.get("opening_hours", ""),
+            "phone": t.get("phone") or t.get("contact:phone", ""), "website": t.get("website", ""),
+            "map": f"https://yandex.ru/maps/?pt={plon},{plat}&z=17&l=map",
+        })
+    return sorted(out, key=lambda x: x["distance_m"])[:limit]
