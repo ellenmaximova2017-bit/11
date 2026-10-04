@@ -1,0 +1,29 @@
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_PATH: /data/bot.db
+      SITES_DIR: /data/sites
+      WEB_PORT: "8080"
+    volumes:
+      - botdata:/data
+    # порт 8080 наружу не публикуется: к нему ходит только Caddy
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [bot]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+
+volumes:
+  botdata:
+  caddydata:

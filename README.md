@@ -4,6 +4,8 @@
 и зарабатывает на подписке: 3 бесплатных запроса → paywall → Неделя / Месяц.
 
 ## Запуск
+
+На сервере: см. [deploy.md](deploy.md) (Docker + автоматический https). Локально:
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
