@@ -15,6 +15,9 @@ CREATE TABLE IF NOT EXISTS messages(
 CREATE TABLE IF NOT EXISTS payments(
   id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, plan TEXT, amount INTEGER, ts INTEGER
 );
+CREATE TABLE IF NOT EXISTS google_tokens(
+  user_id INTEGER PRIMARY KEY, refresh_token TEXT
+);
 CREATE TABLE IF NOT EXISTS reminders(
   id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, at INTEGER, text TEXT, sent INTEGER DEFAULT 0
 );
@@ -96,3 +99,12 @@ async def stats():
     paid = await _one("SELECT COUNT(*) c FROM users WHERE paid_until>?", (time.time(),))
     rev = await _one("SELECT COALESCE(SUM(amount),0) s FROM payments")
     return users["c"], paid["c"], rev["s"]
+
+
+async def set_google_token(uid, token):
+    await _exec("INSERT OR REPLACE INTO google_tokens(user_id,refresh_token) VALUES(?,?)", (uid, token))
+
+
+async def get_google_token(uid):
+    row = await _one("SELECT refresh_token FROM google_tokens WHERE user_id=?", (uid,))
+    return row["refresh_token"] if row else None

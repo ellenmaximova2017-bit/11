@@ -9,7 +9,7 @@ from urllib.parse import parse_qsl
 from aiohttp import web
 from aiogram.types import LabeledPrice
 
-from . import config, db, pricing
+from . import config, db, gcal, pricing
 from .scenarios import SCENARIOS
 
 WEBAPP_DIR = Path(__file__).resolve().parent.parent / "webapp"
@@ -79,6 +79,19 @@ async def invoice(request):
     return web.json_response({"link": link})
 
 
+async def google_callback(request):
+    uid = gcal.verify_state(request.query.get("state", ""))
+    code = request.query.get("code")
+    if uid is None or not code:
+        return web.Response(text="Ссылка недействительна или доступ не выдан.", status=400)
+    try:
+        await gcal.connect(uid, code)
+    except Exception:
+        return web.Response(text="Не удалось подключить календарь, попробуйте ещё раз.", status=500)
+    await request.app["bot"].send_message(uid, "✅ Google Календарь подключён. Теперь напоминания попадут и туда.")
+    return web.Response(text="Готово! Календарь подключён, можно вернуться в Telegram.", content_type="text/plain")
+
+
 async def index(request):
     return web.FileResponse(WEBAPP_DIR / "index.html")
 
@@ -89,4 +102,5 @@ def make_app(bot) -> web.Application:
     app.router.add_get("/", index)
     app.router.add_get("/api/me", me)
     app.router.add_post("/api/invoice", invoice)
+    app.router.add_get("/oauth/google/callback", google_callback)
     return app

@@ -23,6 +23,11 @@ python -m bot.main
 4. Приветственная картинка: положите `assets/welcome.png` (необязательно).
 5. Без `WEBAPP_URL` бот работает как обычный чат-бот с кнопками.
 
+## Google Календарь
+1. Google Cloud Console → OAuth client (Web), включить Calendar API, redirect URI `<WEBAPP_URL>/oauth/google/callback`.
+2. `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` в `.env`. Пользователь подключается командой `/calendar`.
+3. Запрашивается только доступ к событиям (`calendar.events`); напоминания дублируются в календарь.
+
 ## Фото и PDF
 Фото и PDF (до 20 МБ) уходят в Claude вместе с выбранным сценарием.
 

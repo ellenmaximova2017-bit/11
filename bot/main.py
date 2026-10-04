@@ -15,7 +15,7 @@ from aiogram.types import (
 from aiohttp import web
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from . import ai, config, db, pricing, web as webmod
+from . import ai, config, db, gcal, pricing, web as webmod
 from .scenarios import SCENARIOS
 
 logging.basicConfig(level=logging.INFO)
@@ -63,6 +63,18 @@ async def start(m: Message, command: CommandObject):
         await m.answer_photo(FSInputFile(WELCOME_IMG), caption=text, parse_mode="HTML", reply_markup=menu())
     else:
         await m.answer(text, parse_mode="HTML", reply_markup=menu())
+
+
+@dp.message(Command("calendar"))
+async def calendar(m: Message):
+    if not gcal.enabled():
+        await m.answer("Google Календарь пока не настроен.")
+        return
+    if await db.get_google_token(m.from_user.id):
+        await m.answer("✅ Календарь уже подключён. Переподключить: ссылка ниже.")
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(
+        text="Подключить Google Календарь", url=gcal.auth_url(m.from_user.id))]])
+    await m.answer("Я буду добавлять напоминания в твой календарь. Доступ только к событиям, можно отозвать в настройках Google.", reply_markup=kb)
 
 
 @dp.message(Command("menu"))
@@ -128,7 +140,8 @@ async def process_reminders(text: str, uid: int) -> str:
         tz = timezone(timedelta(hours=3))
         at = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M").replace(tzinfo=tz)
         await db.add_reminder(uid, int(at.timestamp()), m.group(2))
-        text = REMIND_RE.sub("", text).strip() + "\n\n🔔 Напоминание поставлено."
+        in_cal = await gcal.add_event(uid, at, m.group(2))
+        text = REMIND_RE.sub("", text).strip() + "\n\n🔔 Напоминание поставлено" + (" и добавлено в Google Календарь." if in_cal else ".")
     return text
 
 
