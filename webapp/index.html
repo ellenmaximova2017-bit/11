@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>AI-агент</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{--bg:#f4f4f6;--card:#fff;--text:#111;--muted:#8a8a92;--accent:#6c3ce9;--blue:#3d4df5;--line:#ececf0}
+@media (prefers-color-scheme:dark){:root{--bg:#111114;--card:#1c1c21;--text:#f2f2f5;--muted:#8d8d96;--line:#2a2a31}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font:16px/1.35 -apple-system,system-ui,sans-serif;background:var(--bg);color:var(--text);padding-bottom:env(safe-area-inset-bottom)}
+.screen{display:none;min-height:100vh}.screen.on{display:block}
+/* onboarding */
+#boot{background:linear-gradient(#3d4df5,#4a8af0 60%,#e3e3f5);color:#fff;text-align:center;padding:90px 20px}
+#boot .em{font-size:84px}#boot h1{font-size:30px;margin:18px 0 28px}
+.step{background:#fff;color:#111;border-radius:22px;padding:18px;margin:12px 0;display:flex;gap:14px;align-items:center;font-weight:600;text-align:left}
+.step .dot{width:30px;height:30px;border-radius:50%;background:#eef;display:grid;place-items:center;flex:none}
+.step.done .dot{background:#e5f6ea;color:#2a9d4a}.step.wait{opacity:.6}
+/* home */
+.hero{background:linear-gradient(#8f8cf6,var(--bg));padding:26px 20px 10px}
+.hero h1{margin:0;font-size:28px}
+h2{margin:26px 20px 10px;font-size:24px}
+.list{background:var(--card);border-radius:24px;margin:0 16px;overflow:hidden}
+.item{display:flex;align-items:center;gap:16px;padding:16px 18px;border-bottom:1px solid var(--line)}
+.item:last-child{border:0}.item b{display:block;font-weight:500;font-size:18px}.item small{color:var(--muted);font-size:15px}
+.item .ic{font-size:32px;width:40px;text-align:center}.item .ar{margin-left:auto;color:var(--muted)}
+.free{margin:10px 16px 0;padding:12px 16px;background:var(--card);border-radius:18px;color:var(--muted)}
+.tabbar{position:fixed;left:50%;bottom:calc(14px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--card);border-radius:34px;padding:8px;display:flex;gap:6px;box-shadow:0 4px 24px #0002}
+.tab{padding:10px 22px;border-radius:26px;font-size:13px;text-align:center;color:var(--text)}.tab.on{background:var(--bg);color:var(--blue)}
+.tab span{display:block;font-size:24px}
+/* paywall */
+#pay{background:linear-gradient(#3d4df5,#4a8af0 28%,var(--bg) 45%);padding-bottom:140px}
+.pay-top{color:#fff;text-align:center;padding:56px 16px 0}
+.timer{font-weight:700}.pay-top h1{font-size:34px;margin:16px 0}
+.proof{background:var(--card);border-radius:24px;margin:20px 16px;padding:18px}
+.proof .big{font-size:28px;font-weight:700}.proof .lbl{color:var(--accent);font-weight:700;font-size:13px}
+.plans{display:flex;gap:12px;margin:0 16px}
+.plan{flex:1;background:var(--card);border:3px solid transparent;border-radius:22px;padding:16px;position:relative}
+.plan.sel{border-color:var(--accent)}.plan .old{color:var(--muted);text-decoration:line-through;font-size:14px}
+.plan .pr{font-size:26px;font-weight:700;margin:10px 0 2px}.plan .pd{color:var(--muted);font-size:14px}
+.cta{position:fixed;left:16px;right:16px;bottom:calc(14px + env(safe-area-inset-bottom));text-align:center}
+.cta button{width:100%;border:0;border-radius:30px;background:var(--accent);color:#fff;font-size:20px;font-weight:600;padding:18px}
+.cta small{display:block;margin-top:6px;color:var(--muted)}
+.back{position:absolute;top:14px;left:16px;color:#fff;font-size:16px}
+</style>
+</head>
+<body>
+<div id="boot" class="screen on">
+  <div class="em" id="bootEm">💻</div><h1 id="bootTitle">Готовлюсь к работе</h1>
+  <div id="bootSteps"></div>
+</div>
+
+<div id="home" class="screen">
+  <div class="hero"><h1 id="hello">Привет!</h1></div>
+  <div class="free" id="freeLine"></div>
+  <h2>Что сделать?</h2>
+  <div class="list" id="scList"></div>
+  <div style="height:120px"></div>
+  <div class="tabbar"><div class="tab on"><span>🔍</span>Открытия</div><div class="tab" id="goPay"><span>⭐</span>Подписка</div></div>
+</div>
+
+<div id="pay" class="screen">
+  <div class="back" id="back">‹ Назад</div>
+  <div class="pay-top">
+    <div id="discLine" class="timer"></div>
+    <h1>Окупи подписку<br>за первую неделю</h1>
+  </div>
+  <div class="proof">
+    <div class="lbl">ПОЛЬЗОВАТЕЛИ БОТА</div>
+    <div class="big" id="usersCount">—</div>
+    <div style="color:var(--muted)" id="subsCount"></div>
+  </div>
+  <h2 style="margin-top:0">Выбери тариф</h2>
+  <div class="plans" id="plans"></div>
+  <h2>Что умеет</h2>
+  <div class="list" id="can"></div>
+  <div class="cta"><button id="buy">Продолжить</button><small>Отменить можно в любой момент</small></div>
+</div>
+
+<script>
+const tg = window.Telegram.WebApp; tg.ready(); tg.expand();
+const $ = id => document.getElementById(id);
+const hdr = {"X-Init-Data": tg.initData, "Content-Type": "application/json"};
+let me, plan = "month";
+const ICONS = {avito:"📦",travel:"✈️",clients:"💰",instagram:"📱",site:"🦄",competitors:"🔍",price:"🛒",doc:"📄",remind:"🔔"};
+const show = id => document.querySelectorAll(".screen").forEach(s => s.classList.toggle("on", s.id===id));
+const rub = n => n.toLocaleString("ru-RU") + " ₽";
+
+const STEPS = [["💻","Готовлюсь к работе",["Запоминаю тебя","Подключаю инструменты"]],
+               ["🔍","Проверяю подписку",["Ищу подписку","Готово"]],
+               ["🎁","Готовлю предложение",["Считаю тарифы","Предложение готово"]]];
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function boot(load){
+  const p = load();
+  for (const [em,title,steps] of STEPS){
+    $("bootEm").textContent = em; $("bootTitle").textContent = title; $("bootSteps").innerHTML = "";
+    for (const s of steps){
+      const el = document.createElement("div"); el.className = "step wait";
+      el.innerHTML = `<div class="dot">…</div>${s}`; $("bootSteps").append(el);
+      await sleep(350); el.className = "step done"; el.firstChild.textContent = "✓";
+    }
+    await sleep(250);
+  }
+  return p;
+}
+
+function render(){
+  $("hello").textContent = `Привет, ${me.name}!`;
+  $("freeLine").textContent = me.paid ? "✅ Подписка активна" : `Бесплатных запросов: ${me.free_left}`;
+  $("scList").innerHTML = Object.entries(me.scenarios).map(([k,t]) => {
+    const title = t.replace(/^\S+\s/, "");
+    return `<div class="item" data-k="${k}"><div class="ic">${ICONS[k]||"✨"}</div><div><b>${title}</b></div><div class="ar">›</div></div>`;
+  }).join("");
+  document.querySelectorAll("#scList .item").forEach(el => el.onclick = () =>
+    tg.openTelegramLink(`https://t.me/${me.bot}?start=sc_${el.dataset.k}`));
+  $("can").innerHTML = ["Продать вещь на Авито","Найти клиентов","Сравнить цены","Разобрать договор","Напомнить вовремя"]
+    .map(t => `<div class="item"><b>${t}</b></div>`).join("");
+  $("usersCount").textContent = me.stats.users.toLocaleString("ru-RU");
+  $("subsCount").textContent = `Подписчиков: ${me.stats.subscribers}`;
+  renderPlans();
+}
+function renderPlans(){
+  $("plans").innerHTML = Object.entries(me.plans).map(([k,p]) => `
+    <div class="plan ${k===plan?"sel":""}" data-k="${k}">
+      <b>${p.name}</b>
+      <div class="pr">${rub(p.price)}</div>
+      ${p.price<p.base?`<div class="old">${rub(p.base)}</div>`:""}
+      <div class="pd">~${Math.round(p.price/p.days)} ₽/день</div></div>`).join("");
+  document.querySelectorAll(".plan").forEach(el => el.onclick = () => {plan = el.dataset.k; renderPlans();});
+}
+function tick(){
+  if (!me.discount) { $("discLine").textContent = ""; return; }
+  const left = me.discount_until*1000 - Date.now();
+  if (left <= 0) { me.discount = 0; for (const p of Object.values(me.plans)) p.price = p.base; renderPlans(); tick(); return; }
+  const h = Math.floor(left/3.6e6), m = Math.floor(left%3.6e6/6e4), s = Math.floor(left%6e4/1e3);
+  $("discLine").textContent = `🔥 Скидка ${me.discount}% · ${[h,m,s].map(x=>String(x).padStart(2,"0")).join(":")}`;
+}
+setInterval(() => me && tick(), 1000);
+
+$("goPay").onclick = () => show("pay"); $("back").onclick = () => show("home");
+$("buy").onclick = async () => {
+  if (me.paid) return tg.showAlert("Подписка уже активна 🎉");
+  if (!me.payments) return tg.showAlert("Оплата пока не подключена");
+  const r = await fetch("/api/invoice", {method:"POST", headers:hdr, body:JSON.stringify({plan})});
+  if (!r.ok) return tg.showAlert("Не удалось создать счёт, попробуй позже");
+  tg.openInvoice((await r.json()).link, st => { if (st === "paid") { tg.close(); } });
+};
+
+boot(async () => { me = await (await fetch("/api/me", {headers:hdr})).json(); })
+  .then(() => { render(); tick(); show("home"); })
+  .catch(() => { $("bootTitle").textContent = "Открой приложение из Telegram"; });
+</script>
+</body>
+</html>
