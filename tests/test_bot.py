@@ -217,3 +217,13 @@ def test_service_search_categories(monkeypatch):
     monkeypatch.setattr(services, "yandex_places", y)
     out = run(tools.run("find_places", {"query": "сантехник"}, tools.Ctx(1, bot=None, location=(54.7, 55.9))))
     assert seen["kind"] == "сантехник" and "СантехСервис" in out
+
+
+def test_cinema_kind_and_scenario():
+    from bot import services
+    from bot.scenarios import SCENARIOS
+    assert services.osm_filter("cinema") == '["amenity"="cinema"]' and services.KIND_RU["cinema"] == "кинотеатр"
+    p = SCENARIOS["cinema"]["prompt"]
+    assert "НЕ" in p and "afisha.yandex.ru" in p
+    specs = {t["name"]: t for t in tools.specs(tools.Ctx(1, bot=None))}
+    assert "cinema" in specs["find_places"]["input_schema"]["properties"]["kind"]["enum"]

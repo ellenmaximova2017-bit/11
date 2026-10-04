@@ -26,7 +26,7 @@ current: dict[int, str] = {}        # user_id -> выбранный сценар
 last_image: dict[int, bytes] = {}   # user_id -> последнее фото (для edit_photo)
 last_location: dict[int, tuple[float, float]] = {}  # только в памяти, в базу не пишем
 locks: dict[int, asyncio.Lock] = {}
-LOCATION_SCENARIOS = {"food", "master"}  # сценарии, где просим геопозицию
+LOCATION_SCENARIOS = {"food", "master", "cinema"}  # сценарии, где просим геопозицию
 PRIVATE = F.chat.type == "private"
 GROUP = F.chat.type.in_({"group", "supergroup"})
 
@@ -90,7 +90,7 @@ async def balance(m: Message):
 WELCOME = (
     "<b>Что умеет этот бот?</b>\nИИ, который общается и делает за тебя\n\n"
     "Например:\n📦 Продать на Авито\n💰 Найти клиентов\n🛒 Купить выгоднее\n📄 Разобрать договор\n"
-    "🎨 Поправить фото\n🍽 Найти ресторан рядом\n🔧 Электрик, сантехник, мастер на дом\n\nИ ещё десятки сценариев. Можно писать текстом, голосом, слать фото и PDF.\n"
+    "🎨 Поправить фото\n🍽 Найти ресторан рядом\n🔧 Электрик, сантехник, мастер на дом\n🎬 Кино рядом и афиша\n\nИ ещё десятки сценариев. Можно писать текстом, голосом, слать фото и PDF.\n"
     "Первые {n} запроса бесплатно."
 )
 
@@ -356,8 +356,9 @@ async def handle_location(m: Message):
     if current.get(uid) not in LOCATION_SCENARIOS:
         current[uid] = "food"
     await m.answer("📍 Принял. Геопозицию храню только в памяти бота, пока он работает.", reply_markup=ReplyKeyboardRemove())
-    await run(m, "Найди мастера рядом с моей геопозицией." if current[uid] == "master"
-              else "Найди, где поесть рядом с моей геопозицией.")
+    ask = {"master": "Найди мастера рядом с моей геопозицией.",
+           "cinema": "Найди кинотеатры рядом с моей геопозицией и покажи афишу."}
+    await run(m, ask.get(current[uid], "Найди, где поесть рядом с моей геопозицией."))
 
 
 @dp.message(F.photo, PRIVATE)

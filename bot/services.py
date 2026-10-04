@@ -125,7 +125,7 @@ def haversine(lat1, lon1, lat2, lon2) -> int:
     return round(6371000 * 2 * math.asin(math.sqrt(a)))
 
 
-KINDS = {"restaurant", "cafe", "fast_food", "bar", "pub"}
+KINDS = {"restaurant", "cafe", "fast_food", "bar", "pub", "cinema"}
 
 
 CRAFTS = (  # подстрока запроса -> тег craft в OSM
@@ -173,7 +173,7 @@ async def nearby_places(lat: float, lon: float, kind: str = "restaurant", cuisin
 
 # ---------- 2ГИС (основной источник, если задан DGIS_API_KEY) ----------
 DGIS_URL = "https://catalog.api.2gis.com/3.0/items"
-KIND_RU = {"restaurant": "ресторан", "cafe": "кафе", "fast_food": "фастфуд", "bar": "бар", "pub": "паб"}
+KIND_RU = {"restaurant": "ресторан", "cafe": "кафе", "fast_food": "фастфуд", "bar": "бар", "pub": "паб", "cinema": "кинотеатр"}
 DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 
