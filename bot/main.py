@@ -47,6 +47,42 @@ def paywall(created: int) -> InlineKeyboardMarkup:
     return kb.as_markup()
 
 
+def topup_kb() -> InlineKeyboardMarkup | None:
+    kb = InlineKeyboardBuilder()
+    if config.TOPUP_RUB and config.PAYMENT_TOKEN:
+        kb.button(text=f"+{config.TOPUP_CREDITS} запросов — {config.TOPUP_RUB} ₽", callback_data="buy:topup")
+    if config.TOPUP_STARS:
+        kb.button(text=f"+{config.TOPUP_CREDITS} запросов — ⭐{config.TOPUP_STARS}", callback_data="buy:topup_stars")
+    kb.adjust(1)
+    return kb.as_markup() if kb.buttons else None
+
+
+LIMIT_TEXT = ("Запросы по подписке закончились. Можно докупить пакет — он добавится к лимиту, "
+              "подписка при этом не меняется 👇")
+
+
+async def gate(uid: int, user) -> tuple[bool, bool]:
+    """(можно ли выполнять запрос, подписчик ли). Лимит подписки и бесплатный лимит считаются отдельно."""
+    paid_user = await db.is_paid(uid)
+    return (user["credits"] > 0 if paid_user else db.free_left(user) > 0), paid_user
+
+
+async def charge(uid: int, paid_user: bool, cost: int = 1):
+    await (db.spend(uid, cost) if paid_user else db.bump_used(uid))
+
+
+@dp.message(Command("balance"), PRIVATE)
+async def balance(m: Message):
+    user = await db.get_user(m.from_user.id)
+    if await db.is_paid(m.from_user.id):
+        left = max(int((user["paid_until"] - time.time()) // 86400), 0)
+        await m.answer(f"✅ Подписка активна (~{left} дн.)\nОсталось запросов: {user['credits']}\n"
+                       "Правка фото списывает 3 запроса, анализ Instagram — 2, остальное — 1.",
+                       reply_markup=topup_kb())
+    else:
+        await m.answer(f"Подписки нет. Бесплатных запросов: {db.free_left(user)}", reply_markup=paywall(user["created"]))
+
+
 # ---------- старт, меню, профиль ----------
 WELCOME = (
     "<b>Что умеет этот бот?</b>\nИИ, который общается и делает за тебя\n\n"
@@ -165,6 +201,21 @@ async def pick(c: CallbackQuery):
 @dp.callback_query(F.data.startswith("buy:"))
 async def buy(c: CallbackQuery):
     key = c.data[4:]
+    if key in ("topup", "topup_stars"):
+        if not await db.is_paid(c.from_user.id):
+            return await c.answer("Докупка доступна при активной подписке", show_alert=True)
+        label = f"+{config.TOPUP_CREDITS} запросов"
+        if key == "topup_stars" and config.TOPUP_STARS:
+            await bot.send_invoice(c.from_user.id, title=label, description="Разовая докупка запросов к подписке.",
+                                   payload="topup:stars", provider_token="", currency="XTR",
+                                   prices=[LabeledPrice(label=label, amount=config.TOPUP_STARS)])
+        elif key == "topup" and config.TOPUP_RUB and config.PAYMENT_TOKEN:
+            await bot.send_invoice(c.from_user.id, title=label, description="Разовая докупка запросов к подписке.",
+                                   payload=f"topup:{config.TOPUP_RUB}", provider_token=config.PAYMENT_TOKEN,
+                                   currency="RUB", prices=[LabeledPrice(label=label, amount=config.TOPUP_RUB * 100)])
+        else:
+            return await c.answer("Недоступно", show_alert=True)
+        return await c.answer()
     if key == "stars":
         if not config.STARS_MONTH:
             return await c.answer("Недоступно", show_alert=True)
@@ -197,14 +248,20 @@ async def pre_checkout(q: PreCheckoutQuery):
 @dp.message(F.successful_payment)
 async def paid(m: Message):
     sp, uid = m.successful_payment, m.from_user.id
+    if sp.invoice_payload.startswith("topup:"):
+        await db.add_credits(uid, config.TOPUP_CREDITS)
+        await db.record_payment(uid, "stars" if sp.currency == "XTR" else "topup", sp.total_amount // (1 if sp.currency == "XTR" else 100))
+        await m.answer(f"✅ Добавлено {config.TOPUP_CREDITS} запросов. Пиши задачу.")
+        return
     if sp.currency == "XTR":  # подписка Stars: первый платёж и каждое автопродление
         user = await db.get_user(uid)
         until = sp.subscription_expiration_date or int(time.time()) + 30 * 86400
         await db.set_paid_until(uid, max(until, user["paid_until"]))
         await db.set_sub_charge(uid, sp.telegram_payment_charge_id)
         await db.record_payment(uid, "stars", sp.total_amount)
+        await db.add_credits(uid, config.CREDITS_MONTH)  # и на первую оплату, и на каждое автопродление
         if not sp.is_recurring or sp.is_first_recurring:
-            await m.answer("✅ Подписка активна, продлевается автоматически. Отменить: /cancel")
+            await m.answer(f"✅ Подписка активна: {config.CREDITS_MONTH} запросов в месяц, продлевается автоматически. Отменить: /cancel")
         return
     plan, amount = sp.invoice_payload.split(":")
     await db.add_subscription(uid, plan, PLANS[plan][2], int(amount))
@@ -244,10 +301,13 @@ async def _typing(chat_id: int, stop: asyncio.Event):
 async def run(m: Message, text: str, attachment: dict | None = None, note: str = ""):
     uid = m.from_user.id
     user = await db.get_user(uid, m.from_user.full_name)
-    paid_user = await db.is_paid(uid)
-    if not paid_user and db.free_left(user) <= 0:
-        await m.answer("Бесплатные запросы закончились. Подписка окупается за первую неделю 👇",
-                       reply_markup=paywall(user["created"]))
+    ok, paid_user = await gate(uid, user)
+    if not ok:
+        if paid_user:
+            await m.answer(LIMIT_TEXT, reply_markup=topup_kb())
+        else:
+            await m.answer("Бесплатные запросы закончились. Подписка окупается за первую неделю 👇",
+                           reply_markup=paywall(user["created"]))
         return
     asyncio.create_task(_work(m, uid, text, attachment, note, user, paid_user))  # не блокируем приём сообщений
 
@@ -265,7 +325,7 @@ async def _work(m, uid, text, attachment, note, user, paid_user):
                 attachment, ctx, config.MODELS.get(key, config.MODELS["std"])[1], await db.facts(uid),
             )
             await db.save(uid, "assistant", answer)
-            await db.bump_used(uid)
+            await charge(uid, paid_user, 1 + ctx.extra_cost)
             await m.answer(answer[:4096])
         except Exception:
             logging.exception("AI error")
@@ -328,8 +388,9 @@ GROUP_PROMPTS = {
 async def group_report(m: Message, command: CommandObject):
     uid = m.from_user.id
     user = await db.get_user(uid, m.from_user.full_name)
-    if not await db.is_paid(uid) and db.free_left(user) <= 0:
-        await m.reply("Бесплатные запросы закончились: напиши мне в личку /start.")
+    ok, paid_user = await gate(uid, user)
+    if not ok:
+        await m.reply("Запросы закончились: напиши мне в личку /balance.")
         return
     rows = await db.chat_since(m.chat.id, int(time.time()) - 86400)
     if len(rows) < 3:
@@ -341,7 +402,7 @@ async def group_report(m: Message, command: CommandObject):
         [{"role": "user", "content": f"{GROUP_PROMPTS[command.command]}\n\nПереписка:\n{log}"}],
         use_tools=False, model=config.MODELS["std"][1],
     )
-    await db.bump_used(uid)
+    await charge(uid, paid_user)
     await m.reply(answer[:4096])
 
 

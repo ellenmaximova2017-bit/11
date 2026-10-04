@@ -71,6 +71,12 @@ h2{margin:26px 20px 10px;font-size:24px}
 <div id="prof" class="screen">
   <div class="hero"><h1>Профиль</h1></div>
   <div class="free" id="subLine"></div>
+  <div id="topupBox" style="display:none">
+    <h2>Лимит запросов</h2>
+    <div class="free" id="creditsLine"></div>
+    <button class="btn2" id="topupRub" style="display:none"></button>
+    <button class="btn2" id="topupStars" style="display:none"></button>
+  </div>
   <h2>Что я о тебе помню</h2>
   <div class="list" id="facts"></div>
   <button class="btn2" id="forgetBtn">Стереть память</button>
@@ -145,6 +151,11 @@ function render(){
   $("subLine").textContent = me.paid
     ? `✅ Подписка до ${new Date(me.paid_until*1000).toLocaleDateString("ru-RU")}${me.auto_renew?" · автопродление":""}`
     : `Подписки нет · бесплатных запросов: ${me.free_left}`;
+  $("topupBox").style.display = me.paid ? "block" : "none";
+  $("creditsLine").textContent = `Осталось запросов: ${me.credits}. Правка фото списывает 3, анализ Instagram — 2, остальное — 1.`;
+  const t = me.topup;
+  $("topupRub").style.display = t.rub ? "block" : "none"; $("topupRub").textContent = `+${t.credits} запросов — ${t.rub} ₽`;
+  $("topupStars").style.display = t.stars ? "block" : "none"; $("topupStars").textContent = `+${t.credits} запросов — ⭐${t.stars}`;
   $("cancelBtn").style.display = me.auto_renew ? "block" : "none";
   $("facts").innerHTML = me.facts.length ? me.facts.map(f => `<div class="fact">${f.replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]))}</div>`).join("")
     : `<div class="fact" style="color:var(--muted)">Пока ничего. Расскажи боту о себе.</div>`;
@@ -154,13 +165,13 @@ function render(){
   renderPlans();
 }
 function renderPlans(){
-  const stars = me.stars_price ? `<div class="plan ${plan==="stars"?"sel":""}" data-k="stars"><b>Месяц ⭐</b><div class="pr">⭐${me.stars_price}</div><div class="pd">автопродление</div></div>` : "";
+  const stars = me.stars_price ? `<div class="plan ${plan==="stars"?"sel":""}" data-k="stars"><b>Месяц ⭐</b><div class="pr">⭐${me.stars_price}</div><div class="pd">автопродление · ${me.credits_plan.month} запросов</div></div>` : "";
   $("plans").innerHTML = stars + Object.entries(me.plans).map(([k,p]) => `
     <div class="plan ${k===plan?"sel":""}" data-k="${k}">
       <b>${p.name}</b>
       <div class="pr">${rub(p.price)}</div>
       ${p.price<p.base?`<div class="old">${rub(p.base)}</div>`:""}
-      <div class="pd">~${Math.round(p.price/p.days)} ₽/день</div></div>`).join("");
+      <div class="pd">${me.credits_plan[k]} запросов · ~${Math.round(p.price/p.days)} ₽/день</div></div>`).join("");
   document.querySelectorAll(".plan").forEach(el => el.onclick = () => {plan = el.dataset.k; renderPlans();});
 }
 function tick(){
@@ -173,6 +184,12 @@ function tick(){
 setInterval(() => me && tick(), 1000);
 
 $("goPay").onclick = () => show("pay"); $("back").onclick = () => show("home");
+const topup = plan => async () => {
+  const r = await fetch("/api/invoice", {method:"POST", headers:hdr, body:JSON.stringify({plan})});
+  if (!r.ok) return tg.showAlert("Не удалось создать счёт");
+  tg.openInvoice((await r.json()).link, st => { if (st === "paid") { fetch("/api/me", {headers:hdr}).then(x => x.json()).then(j => { me = j; render(); }); } });
+};
+$("topupRub").onclick = topup("topup"); $("topupStars").onclick = topup("topup_stars");
 $("goProf").onclick = () => show("prof"); $("profBack").onclick = () => show("home");
 $("forgetBtn").onclick = () => tg.showConfirm("Стереть всё, что я о тебе помню?", async ok => {
   if (!ok) return; await fetch("/api/forget", {method:"POST", headers:hdr}); me.facts = []; render(); });

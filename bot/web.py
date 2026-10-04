@@ -46,6 +46,10 @@ async def me(request):
         "name": tg_user.get("first_name", ""),
         "paid": await db.is_paid(user["id"]),
         "free_left": db.free_left(user),
+        "credits": user["credits"],
+        "credits_plan": {"month": config.CREDITS_MONTH, "week": config.CREDITS_WEEK},
+        "topup": {"credits": config.TOPUP_CREDITS,
+                  "rub": config.TOPUP_RUB if config.PAYMENT_TOKEN else 0, "stars": config.TOPUP_STARS},
         "paid_until": user["paid_until"],
         "auto_renew": bool(user["sub_charge_id"]) and await db.is_paid(user["id"]),
         "stars_price": config.STARS_MONTH,
@@ -67,6 +71,22 @@ async def me(request):
 async def invoice(request):
     tg_user = await _auth(request)
     plan = (await request.json()).get("plan")
+    if plan in ("topup", "topup_stars"):
+        user = await db.get_user(tg_user["id"])
+        if not await db.is_paid(user["id"]):
+            raise web.HTTPForbidden(text="subscription required")
+        label = f"+{config.TOPUP_CREDITS} запросов"
+        if plan == "topup_stars" and config.TOPUP_STARS:
+            kw = dict(payload="topup:stars", provider_token="", currency="XTR",
+                      prices=[LabeledPrice(label=label, amount=config.TOPUP_STARS)])
+        elif plan == "topup" and config.TOPUP_RUB and config.PAYMENT_TOKEN:
+            kw = dict(payload=f"topup:{config.TOPUP_RUB}", provider_token=config.PAYMENT_TOKEN, currency="RUB",
+                      prices=[LabeledPrice(label=label, amount=config.TOPUP_RUB * 100)])
+        else:
+            raise web.HTTPBadRequest()
+        link = await request.app["bot"].create_invoice_link(
+            title=label, description="Разовая докупка запросов к подписке.", **kw)
+        return web.json_response({"link": link})
     if plan == "stars" and config.STARS_MONTH:
         link = await request.app["bot"].create_invoice_link(
             title="Подписка: месяц", description="Автопродление каждые 30 дней, отмена в любой момент.",

@@ -16,6 +16,7 @@ class Ctx:
     uid: int
     bot: Bot
     last_image: bytes | None = None
+    extra_cost: int = 0  # дорогие операции списывают больше запросов
 
 
 def specs(ctx: Ctx) -> list[dict]:
@@ -69,10 +70,13 @@ async def run(name: str, args: dict, ctx: Ctx) -> str:
             await gcal.create_gmail_draft(ctx.uid, args["to"], args["subject"], args["body"])
             return "Черновик создан в Gmail."
         if name == "instagram_profile":
-            return await services.instagram_profile(args["username"])
+            result = await services.instagram_profile(args["username"])
+            ctx.extra_cost += 1
+            return result
         if name == "edit_photo":
             img = await services.edit_image(ctx.last_image, args["instruction"])
             await ctx.bot.send_photo(ctx.uid, BufferedInputFile(img, "result.jpg"))
+            ctx.extra_cost += 2
             return "Готово, результат отправлен пользователю."
         if name == "publish_site":
             return "Сайт опубликован: " + services.publish_site(args["html"])

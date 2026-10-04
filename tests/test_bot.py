@@ -94,3 +94,48 @@ def test_web_api():
             assert r.status == 200 and "sandbox" in r.headers["Content-Security-Policy"]
             assert (await c.get("/s/..%2Fbot")).status == 404
     run(go())
+
+
+def test_credits_granted_spent_and_floored():
+    async def go():
+        await db.init()
+        await db.get_user(200, "a")
+        await db.add_subscription(200, "week", 7, 790)
+        assert (await db.get_user(200))["credits"] == 40
+        await db.spend(200, 3)
+        assert (await db.get_user(200))["credits"] == 37
+        await db.spend(200, 999)
+        assert (await db.get_user(200))["credits"] == 0
+        await db.add_credits(200, 50)
+        assert (await db.get_user(200))["credits"] == 50
+    run(go())
+
+
+def test_extra_cost_for_expensive_tools(monkeypatch):
+    from bot import services
+    async def fake_ig(u): return "{}"
+    monkeypatch.setattr(services, "instagram_profile", fake_ig)
+    monkeypatch.setattr(tools.config, "APIFY_TOKEN", "t")
+    ctx = tools.Ctx(1, bot=None)
+    run(tools.run("instagram_profile", {"username": "a"}, ctx))
+    assert ctx.extra_cost == 1
+
+
+def test_topup_requires_subscription_and_web_exposes_credits():
+    async def go():
+        await db.init()
+
+        class FakeBot:
+            async def me(self): return NS(username="b")
+            async def create_invoice_link(self, **kw): return "https://t.me/$t"
+
+        async with TestClient(TestServer(web.make_app(FakeBot()))) as c:
+            h = {"X-Init-Data": sign(300)}
+            me = await (await c.get("/api/me", headers=h)).json()
+            assert me["credits"] == 0 and me["topup"]["stars"] == 200
+            assert (await c.post("/api/invoice", json={"plan": "topup_stars"}, headers=h)).status == 403
+            await db.add_subscription(300, "month", 30, 1490)
+            r = await c.post("/api/invoice", json={"plan": "topup_stars"}, headers=h)
+            assert r.status == 200
+            assert (await (await c.get("/api/me", headers=h)).json())["credits"] == 150
+    run(go())

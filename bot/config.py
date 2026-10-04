@@ -31,3 +31,8 @@ MODELS = {
     "pro": ("🧠 Умная", "claude-opus-5-5"),
 }
 SITES_DIR = os.getenv("SITES_DIR", "sites")
+CREDITS_MONTH = int(os.getenv("CREDITS_MONTH", "150"))
+CREDITS_WEEK = int(os.getenv("CREDITS_WEEK", "40"))
+TOPUP_CREDITS = int(os.getenv("TOPUP_CREDITS", "50"))
+TOPUP_RUB = int(os.getenv("TOPUP_RUB", "290"))
+TOPUP_STARS = int(os.getenv("TOPUP_STARS", "200"))

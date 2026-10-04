@@ -8,7 +8,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS users(
   id INTEGER PRIMARY KEY, name TEXT, used INTEGER DEFAULT 0,
   paid_until INTEGER DEFAULT 0, created INTEGER,
-  bonus INTEGER DEFAULT 0, ref_by INTEGER, sub_charge_id TEXT, model TEXT DEFAULT 'std'
+  bonus INTEGER DEFAULT 0, credits INTEGER DEFAULT 0, ref_by INTEGER, sub_charge_id TEXT, model TEXT DEFAULT 'std'
 );
 CREATE TABLE IF NOT EXISTS facts(
   id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, fact TEXT, UNIQUE(user_id, fact)
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS reminders(
 async def init():
     async with aiosqlite.connect(DB_PATH) as db:
         await db.executescript(SCHEMA)
-        for col, ddl in (("bonus", "INTEGER DEFAULT 0"), ("ref_by", "INTEGER"),
+        for col, ddl in (("bonus", "INTEGER DEFAULT 0"), ("credits", "INTEGER DEFAULT 0"), ("ref_by", "INTEGER"),
                          ("sub_charge_id", "TEXT"), ("model", "TEXT DEFAULT 'std'")):
             try:  # миграция для баз, созданных раньше
                 await db.execute(f"ALTER TABLE users ADD COLUMN {col} {ddl}")
@@ -74,11 +74,22 @@ async def record_payment(uid, plan, amount):
     await _exec("INSERT INTO payments(user_id,plan,amount,ts) VALUES(?,?,?,?)", (uid, plan, amount, int(time.time())))
 
 
+async def add_credits(uid, n):
+    await _exec("UPDATE users SET credits=credits+? WHERE id=?", (n, uid))
+
+
+async def spend(uid, n=1):
+    """Списывает запросы подписчика, не уходя ниже нуля."""
+    await _exec("UPDATE users SET credits=MAX(credits-?,0) WHERE id=?", (n, uid))
+
+
 async def add_subscription(uid, plan, days, amount):
     now = int(time.time())
     row = await _one("SELECT paid_until FROM users WHERE id=?", (uid,))
     start = max(now, row["paid_until"]) if row else now
     await _exec("UPDATE users SET paid_until=? WHERE id=?", (start + days * 86400, uid))
+    from .config import CREDITS_MONTH, CREDITS_WEEK
+    await add_credits(uid, CREDITS_MONTH if plan == "month" else CREDITS_WEEK)
     await _exec("INSERT INTO payments(user_id,plan,amount,ts) VALUES(?,?,?,?)", (uid, plan, amount, now))
 
 
