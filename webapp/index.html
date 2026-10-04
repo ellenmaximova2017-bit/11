@@ -111,7 +111,7 @@ const tg = window.Telegram.WebApp; tg.ready(); tg.expand();
 const $ = id => document.getElementById(id);
 const hdr = {"X-Init-Data": tg.initData, "Content-Type": "application/json"};
 let me, plan = "month";
-const ICONS = {avito:"📦",travel:"✈️",clients:"💰",instagram:"📱",site:"🦄",competitors:"🔍",price:"🛒",doc:"📄",remind:"🔔"};
+const ICONS = {avito:"📦",travel:"✈️",train:"🚆",photo:"🎨",clients:"💰",instagram:"📱",site:"🦄",competitors:"🔍",price:"🛒",doc:"📄",remind:"🔔"};
 const show = id => document.querySelectorAll(".screen").forEach(s => s.classList.toggle("on", s.id===id));
 const rub = n => n.toLocaleString("ru-RU") + " ₽";
 
