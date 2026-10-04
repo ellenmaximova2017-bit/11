@@ -29,11 +29,11 @@ def specs(ctx: Ctx) -> list[dict]:
              "when": {"type": "string", "description": "YYYY-MM-DD HH:MM, UTC+3"}, "text": {"type": "string"}},
              "required": ["when", "text"]}},
     ]
-    t.append({"name": "find_places", "description": "Найти рестораны/кафе/бары рядом с адресом или с геопозицией пользователя (данные OpenStreetMap: название, кухня, адрес, расстояние, часы, телефон, ссылка на карту). Рейтингов и отзывов тут нет — при необходимости дополни веб-поиском и скажи об источнике.",
+    t.append({"name": "find_places", "description": "Найти рестораны/кафе/бары рядом с адресом или с геопозицией пользователя (данные 2ГИС или OpenStreetMap: название, рейтинг и отзывы — если есть в данных, кухня, адрес, расстояние, часы, телефон, ссылка на карту). Если рейтинга в данных нет — не выдумывай его; можно дополнить веб-поиском с указанием источника. Укажи пользователю источник данных.",
               "input_schema": {"type": "object", "properties": {
                   "address": {"type": "string", "description": "Адрес/место; не указывай, если нужно искать рядом с геопозицией пользователя"},
                   "kind": {"type": "string", "enum": sorted(services.KINDS)},
-                  "cuisine": {"type": "string", "description": "Например italian, sushi, georgian (по-английски, как в OSM)"},
+                  "cuisine": {"type": "string", "description": "Например итальянская, суши, грузинская (по-русски для 2ГИС; для OSM — italian, sushi)"},
                   "radius_m": {"type": "integer", "description": "100-3000, по умолчанию 1000"}}}})
     if gcal.enabled():
         t += [
@@ -59,6 +59,16 @@ def specs(ctx: Ctx) -> list[dict]:
     return t
 
 
+async def _first(primary, fallback, *args):
+    """Пробует основной источник, при ошибке — запасной."""
+    if primary:
+        try:
+            return await primary(*args)
+        except Exception:
+            logging.exception("primary source failed, using fallback")
+    return await fallback(*args)
+
+
 async def run(name: str, args: dict, ctx: Ctx) -> str:
     try:
         if name == "remember":
@@ -77,17 +87,26 @@ async def run(name: str, args: dict, ctx: Ctx) -> str:
             await gcal.create_gmail_draft(ctx.uid, args["to"], args["subject"], args["body"])
             return "Черновик создан в Gmail."
         if name == "find_places":
+            src = "OpenStreetMap"
             if args.get("address"):
-                lat, lon, shown = await services.geocode(args["address"])
+                lat, lon, shown = await _first(config.DGIS_API_KEY and services.dgis_geocode, services.geocode,
+                                               args["address"])
             elif ctx.location:
                 (lat, lon), shown = ctx.location, "геопозиция пользователя"
             else:
                 return "Нужен адрес или геопозиция: попроси пользователя прислать адрес или нажать «Отправить геопозицию»."
-            places = await services.nearby_places(lat, lon, args.get("kind", "restaurant"),
-                                                  args.get("cuisine", ""), args.get("radius_m", 1000))
+            a = (lat, lon, args.get("kind", "restaurant"), args.get("cuisine", ""), args.get("radius_m", 1000))
+            places = []
+            if config.DGIS_API_KEY:
+                try:
+                    places, src = await services.dgis_places(*a), "2ГИС"
+                except Exception:
+                    logging.exception("2gis failed, fallback to OSM")
             if not places:
-                return f"Рядом с «{shown}» ничего не найдено в OpenStreetMap: предложи увеличить радиус или поискать через веб."
-            return f"Центр поиска: {shown}\n" + "\n".join(str(x) for x in places)
+                places, src = await services.nearby_places(*a), "OpenStreetMap"
+            if not places:
+                return f"Рядом с «{shown}» ничего не найдено: предложи увеличить радиус или поискать через веб."
+            return f"Источник: {src}. Центр поиска: {shown}\n" + "\n".join(str(x) for x in places)
         if name == "instagram_profile":
             result = await services.instagram_profile(args["username"])
             ctx.extra_cost += 1

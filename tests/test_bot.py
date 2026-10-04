@@ -157,3 +157,22 @@ def test_places_sorted_filtered_and_location_fallback(monkeypatch):
     assert "Нужен адрес" in run(tools.run("find_places", {}, tools.Ctx(1, bot=None)))
     out = run(tools.run("find_places", {"cuisine": "italian"}, tools.Ctx(1, bot=None, location=(54.71, 55.95))))
     assert "Близко" in out and "yandex.ru/maps" in out
+
+
+def test_2gis_parse_and_fallback(monkeypatch):
+    from bot import services
+    items = [{"name": "Пушкин", "address_name": "Ленина, 1", "point": {"lat": 54.7101, "lon": 55.9501},
+              "rubrics": [{"name": "Рестораны"}], "reviews": {"general_rating": 4.6, "general_review_count": 120},
+              "schedule": {"Mon": {"working_hours": [{"from": "09:00", "to": "22:00"}]}},
+              "contact_groups": [{"contacts": [{"type": "phone", "text": "+7 347 000-00-00"}]}]},
+             {"name": "", "point": {"lat": 1, "lon": 1}}]
+    r = services.parse_dgis(items, 54.71, 55.95)
+    assert len(r) == 1 and r[0]["rating"] == 4.6 and r[0]["hours"] == "Mon 09:00-22:00" and r[0]["phone"].startswith("+7")
+
+    async def boom(*a, **k): raise RuntimeError("2ГИС вернул 403")
+    async def osm(*a, **k): return [{"name": "OSM-кафе", "distance_m": 5}]
+    monkeypatch.setattr(tools.config, "DGIS_API_KEY", "k")
+    monkeypatch.setattr(services, "dgis_places", boom)
+    monkeypatch.setattr(services, "nearby_places", osm)
+    out = run(tools.run("find_places", {}, tools.Ctx(1, bot=None, location=(54.71, 55.95))))
+    assert "OpenStreetMap" in out and "OSM-кафе" in out

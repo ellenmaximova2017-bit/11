@@ -150,3 +150,70 @@ async def nearby_places(lat: float, lon: float, kind: str = "restaurant", cuisin
             "map": f"https://yandex.ru/maps/?pt={plon},{plat}&z=17&l=map",
         })
     return sorted(out, key=lambda x: x["distance_m"])[:limit]
+
+
+# ---------- 2ГИС (основной источник, если задан DGIS_API_KEY) ----------
+DGIS_URL = "https://catalog.api.2gis.com/3.0/items"
+KIND_RU = {"restaurant": "ресторан", "cafe": "кафе", "fast_food": "фастфуд", "bar": "бар", "pub": "паб"}
+DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+
+async def _dgis(path: str, params: dict) -> dict:
+    params = {**params, "key": config.DGIS_API_KEY, "locale": "ru_RU"}
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as s, s.get(
+        DGIS_URL + path, params=params
+    ) as r:
+        body = await r.json(content_type=None)
+        meta = body.get("meta", {})
+        if r.status != 200 or meta.get("code", 200) != 200:
+            raise RuntimeError(f"2ГИС вернул {meta.get('code', r.status)}")
+        return body.get("result", {})
+
+
+async def dgis_geocode(address: str) -> tuple[float, float, str]:
+    res = await _dgis("/geocode", {"q": address, "fields": "items.point", "page_size": 1})
+    items = [i for i in res.get("items", []) if i.get("point")]
+    if not items:
+        raise RuntimeError("Адрес не найден")
+    it = items[0]
+    return it["point"]["lat"], it["point"]["lon"], it.get("full_name") or it.get("name") or address
+
+
+def _dgis_hours(schedule: dict | None) -> str:
+    out = []
+    for d in DAYS:
+        wh = (schedule or {}).get(d, {}).get("working_hours") or []
+        if wh:
+            out.append(f"{d} " + ",".join(f"{w['from']}-{w['to']}" for w in wh))
+    return "; ".join(out)
+
+
+def parse_dgis(items: list[dict], lat: float, lon: float) -> list[dict]:
+    out = []
+    for it in items:
+        pt = it.get("point")
+        if not pt or not it.get("name"):
+            continue
+        contacts = [c for g in it.get("contact_groups", []) for c in g.get("contacts", [])]
+        rev = it.get("reviews") or {}
+        out.append({
+            "name": it["name"], "address": it.get("address_name", ""),
+            "cuisine": ", ".join(r.get("name", "") for r in it.get("rubrics", [])[:3]),
+            "distance_m": haversine(lat, lon, pt["lat"], pt["lon"]),
+            "rating": rev.get("general_rating"), "reviews": rev.get("general_review_count"),
+            "hours": _dgis_hours(it.get("schedule")),
+            "phone": next((c.get("text") or c.get("value", "") for c in contacts if c.get("type") == "phone"), ""),
+            "website": next((c.get("value", "") for c in contacts if c.get("type") == "website"), ""),
+            "map": f"https://2gis.ru/?m={pt['lon']},{pt['lat']}/17", "source": "2ГИС",
+        })
+    return out
+
+
+async def dgis_places(lat, lon, kind="restaurant", cuisine="", radius=1000, limit=10) -> list[dict]:
+    q = f"{KIND_RU.get(kind, 'ресторан')} {cuisine}".strip()
+    res = await _dgis("", {
+        "q": q, "point": f"{lon},{lat}", "radius": max(100, min(int(radius), 3000)),
+        "sort": "distance", "sort_point": f"{lon},{lat}", "page_size": 20,
+        "fields": "items.point,items.address_name,items.rubrics,items.reviews,items.schedule,items.contact_groups",
+    })
+    return sorted(parse_dgis(res.get("items", []), lat, lon), key=lambda x: x["distance_m"])[:limit]
