@@ -2,6 +2,7 @@
 import hashlib
 import hmac
 import json
+import re
 import time
 from pathlib import Path
 from urllib.parse import parse_qsl
@@ -37,14 +38,19 @@ async def _auth(request) -> dict:
 async def me(request):
     tg_user = await _auth(request)
     user = await db.get_user(tg_user["id"], tg_user.get("first_name", ""))
-    users, paid, _ = await db.stats()
+    users, paid, _, _ = await db.stats()
     active = pricing.discount_active(user["created"])
     me_bot = await request.app["bot"].me()
     return web.json_response({
         "bot": me_bot.username,
         "name": tg_user.get("first_name", ""),
         "paid": await db.is_paid(user["id"]),
-        "free_left": max(config.FREE_MESSAGES - user["used"], 0),
+        "free_left": db.free_left(user),
+        "paid_until": user["paid_until"],
+        "auto_renew": bool(user["sub_charge_id"]) and await db.is_paid(user["id"]),
+        "stars_price": config.STARS_MONTH,
+        "facts": await db.facts(user["id"], 10),
+        "ref_link": f"https://t.me/{me_bot.username}?start=ref_{user['id']}",
         "discount": config.DISCOUNT_PERCENT if active else 0,
         "discount_until": pricing.discount_until(user["created"]) if active else 0,
         "plans": {
@@ -54,17 +60,24 @@ async def me(request):
         "scenarios": {k: s["title"] for k, s in SCENARIOS.items()},
         # честные цифры, только из нашей базы
         "stats": {"users": users, "subscribers": paid},
-        "payments": bool(config.PAYMENT_TOKEN),
+        "payments": bool(config.PAYMENT_TOKEN or config.STARS_MONTH),
     })
 
 
 async def invoice(request):
     tg_user = await _auth(request)
-    if not config.PAYMENT_TOKEN:
-        raise web.HTTPServiceUnavailable(text="payments disabled")
     plan = (await request.json()).get("plan")
+    if plan == "stars" and config.STARS_MONTH:
+        link = await request.app["bot"].create_invoice_link(
+            title="Подписка: месяц", description="Автопродление каждые 30 дней, отмена в любой момент.",
+            payload="stars:month", provider_token="", currency="XTR",
+            prices=[LabeledPrice(label="Месяц", amount=config.STARS_MONTH)], subscription_period=2592000,
+        )
+        return web.json_response({"link": link})
     if plan not in pricing.PLANS:
         raise web.HTTPBadRequest()
+    if not config.PAYMENT_TOKEN:
+        raise web.HTTPServiceUnavailable(text="payments disabled")
     user = await db.get_user(tg_user["id"])
     name, _, _ = pricing.PLANS[plan]
     amount = pricing.price(plan, user["created"])
@@ -77,6 +90,36 @@ async def invoice(request):
         prices=[LabeledPrice(label=name, amount=amount * 100)],
     )
     return web.json_response({"link": link})
+
+
+async def cancel(request):
+    tg_user = await _auth(request)
+    user = await db.get_user(tg_user["id"])
+    if not user["sub_charge_id"]:
+        raise web.HTTPBadRequest(text="no subscription")
+    await request.app["bot"].edit_user_star_subscription(
+        user_id=user["id"], telegram_payment_charge_id=user["sub_charge_id"], is_canceled=True)
+    return web.json_response({"ok": True})
+
+
+async def forget(request):
+    tg_user = await _auth(request)
+    await db.clear_facts(tg_user["id"])
+    return web.json_response({"ok": True})
+
+
+async def site(request):
+    slug = request.match_info["slug"]
+    path = Path(config.SITES_DIR) / f"{slug}.html"
+    if not re.fullmatch(r"[A-Za-z0-9]{4,16}", slug) or not path.exists():
+        raise web.HTTPNotFound()
+    # sandbox: страница без доступа к origin Mini App; без внешних ресурсов и форм
+    return web.Response(
+        text=path.read_text(encoding="utf-8"), content_type="text/html",
+        headers={"Content-Security-Policy": "sandbox allow-scripts; default-src 'none'; img-src data:; "
+                                            "style-src 'unsafe-inline'; script-src 'unsafe-inline'",
+                 "X-Content-Type-Options": "nosniff"},
+    )
 
 
 async def google_callback(request):
@@ -102,5 +145,8 @@ def make_app(bot) -> web.Application:
     app.router.add_get("/", index)
     app.router.add_get("/api/me", me)
     app.router.add_post("/api/invoice", invoice)
+    app.router.add_post("/api/cancel", cancel)
+    app.router.add_post("/api/forget", forget)
+    app.router.add_get("/s/{slug}", site)
     app.router.add_get("/oauth/google/callback", google_callback)
     return app

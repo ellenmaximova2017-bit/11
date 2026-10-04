@@ -28,6 +28,26 @@ python -m bot.main
 2. `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` в `.env`. Пользователь подключается командой `/calendar`.
 3. Запрашивается только доступ к событиям (`calendar.events`); напоминания дублируются в календарь.
 
+## Что умеет агент (инструменты)
+Claude сам решает, когда вызвать инструмент; показываются только настроенные:
+- `remember` — память о пользователе (`/memory`, `/forget`); `set_reminder` — напоминания + Календарь
+- `create_google_sheet`, `create_gmail_draft` — после `/calendar` (Gmail: только черновики, письма не отправляются)
+- `instagram_profile` — `APIFY_TOKEN`; `edit_photo` — `REPLICATE_API_TOKEN`; `publish_site` — нужен `WEBAPP_URL`, ссылка вида `<WEBAPP_URL>/s/<slug>`
+- голосовые — `OPENAI_API_KEY` (Whisper); выбор модели — `/model`
+- задачи выполняются в фоне, бот отвечает, когда готово
+
+## Подписка
+- Telegram Stars (`STARS_MONTH`): автопродление раз в 30 дней, отмена `/cancel` или в профиле Mini App.
+- ЮKassa: разовые платежи на неделю/месяц (рекуррентов нет).
+- Рефералы: `/invite`, бонус `REFERRAL_BONUS` обоим.
+
+## Группы
+Добавьте бота в чат и отключите Group Privacy в @BotFather. Команды `/digest`, `/best`, `/tasks`.
+Бот хранит сообщения групп 7 дней только для этих сводок. **Предупредите участников**, это ваша ответственность по закону о персональных данных.
+
+## Тесты
+`pip install pytest && pytest tests`
+
 ## Фото и PDF
 Фото и PDF (до 20 МБ) уходят в Claude вместе с выбранным сценарием.
 

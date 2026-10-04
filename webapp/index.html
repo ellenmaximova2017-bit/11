@@ -35,13 +35,19 @@ h2{margin:26px 20px 10px;font-size:24px}
 .timer{font-weight:700}.pay-top h1{font-size:34px;margin:16px 0}
 .proof{background:var(--card);border-radius:24px;margin:20px 16px;padding:18px}
 .proof .big{font-size:28px;font-weight:700}.proof .lbl{color:var(--accent);font-weight:700;font-size:13px}
-.plans{display:flex;gap:12px;margin:0 16px}
+.plans{display:flex;gap:12px;margin:0 16px;flex-wrap:wrap}.plans .plan{min-width:42%}
 .plan{flex:1;background:var(--card);border:3px solid transparent;border-radius:22px;padding:16px;position:relative}
 .plan.sel{border-color:var(--accent)}.plan .old{color:var(--muted);text-decoration:line-through;font-size:14px}
 .plan .pr{font-size:26px;font-weight:700;margin:10px 0 2px}.plan .pd{color:var(--muted);font-size:14px}
 .cta{position:fixed;left:16px;right:16px;bottom:calc(14px + env(safe-area-inset-bottom));text-align:center}
 .cta button{width:100%;border:0;border-radius:30px;background:var(--accent);color:#fff;font-size:20px;font-weight:600;padding:18px}
 .cta small{display:block;margin-top:6px;color:var(--muted)}
+.ex{display:flex;gap:12px;overflow-x:auto;padding:0 16px;scroll-snap-type:x mandatory}
+.ex .c{flex:none;width:78%;scroll-snap-align:start;background:var(--card);border-radius:22px;padding:16px}
+.ex .u{background:#3d4df5;color:#fff;border-radius:16px;padding:10px 14px;margin-left:auto;width:fit-content;max-width:90%}
+.ex .a{background:var(--bg);border-radius:16px;padding:10px 14px;margin-top:8px}.ex .tag{color:var(--muted);font-size:12px;margin-top:8px}
+.btn2{display:block;width:calc(100% - 32px);margin:10px 16px 0;border:0;border-radius:18px;background:var(--card);color:var(--text);padding:14px;font-size:16px}
+.btn2.red{color:#e5484d}.fact{padding:10px 18px;border-bottom:1px solid var(--line)}.fact:last-child{border:0}
 .back{position:absolute;top:14px;left:16px;color:#fff;font-size:16px}
 </style>
 </head>
@@ -56,8 +62,24 @@ h2{margin:26px 20px 10px;font-size:24px}
   <div class="free" id="freeLine"></div>
   <h2>Что сделать?</h2>
   <div class="list" id="scList"></div>
+  <h2>Примеры диалогов</h2>
+  <div class="ex" id="ex"></div>
   <div style="height:120px"></div>
-  <div class="tabbar"><div class="tab on"><span>🔍</span>Открытия</div><div class="tab" id="goPay"><span>⭐</span>Подписка</div></div>
+  <div class="tabbar"><div class="tab on"><span>🔍</span>Открытия</div><div class="tab" id="goPay"><span>⭐</span>Подписка</div><div class="tab" id="goProf"><span>👤</span>Профиль</div></div>
+</div>
+
+<div id="prof" class="screen">
+  <div class="hero"><h1>Профиль</h1></div>
+  <div class="free" id="subLine"></div>
+  <h2>Что я о тебе помню</h2>
+  <div class="list" id="facts"></div>
+  <button class="btn2" id="forgetBtn">Стереть память</button>
+  <h2>Пригласи друга</h2>
+  <div class="free" id="refLine"></div>
+  <button class="btn2" id="refBtn">Поделиться ссылкой</button>
+  <button class="btn2 red" id="cancelBtn" style="display:none">Отменить автопродление</button>
+  <button class="btn2" id="profBack">‹ Назад</button>
+  <div style="height:40px"></div>
 </div>
 
 <div id="pay" class="screen">
@@ -116,12 +138,24 @@ function render(){
     tg.openTelegramLink(`https://t.me/${me.bot}?start=sc_${el.dataset.k}`));
   $("can").innerHTML = ["Продать вещь на Авито","Найти клиентов","Сравнить цены","Разобрать договор","Напомнить вовремя"]
     .map(t => `<div class="item"><b>${t}</b></div>`).join("");
+  const EX = [["Найди клиентов для моих услуг SMM","Нашёл салоны без соцсетей, собрал публичные контакты и подготовил текст сообщения."],
+              ["Где сейчас дешевле iPhone 15?","Сравнил цены на маркетплейсах с учётом кэшбэка и рассрочки, дал лучший вариант со ссылкой."],
+              ["Запомни ДР друга 12 мая, напомни за 3 дня","Поставил напоминание и добавил в Google Календарь."]];
+  $("ex").innerHTML = EX.map(([q,a]) => `<div class="c"><div class="u">${q}</div><div class="a">${a}</div><div class="tag">Пример сценария</div></div>`).join("");
+  $("subLine").textContent = me.paid
+    ? `✅ Подписка до ${new Date(me.paid_until*1000).toLocaleDateString("ru-RU")}${me.auto_renew?" · автопродление":""}`
+    : `Подписки нет · бесплатных запросов: ${me.free_left}`;
+  $("cancelBtn").style.display = me.auto_renew ? "block" : "none";
+  $("facts").innerHTML = me.facts.length ? me.facts.map(f => `<div class="fact">${f.replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]))}</div>`).join("")
+    : `<div class="fact" style="color:var(--muted)">Пока ничего. Расскажи боту о себе.</div>`;
+  $("refLine").textContent = `За каждого друга вы оба получите бонусные запросы`;
   $("usersCount").textContent = me.stats.users.toLocaleString("ru-RU");
   $("subsCount").textContent = `Подписчиков: ${me.stats.subscribers}`;
   renderPlans();
 }
 function renderPlans(){
-  $("plans").innerHTML = Object.entries(me.plans).map(([k,p]) => `
+  const stars = me.stars_price ? `<div class="plan ${plan==="stars"?"sel":""}" data-k="stars"><b>Месяц ⭐</b><div class="pr">⭐${me.stars_price}</div><div class="pd">автопродление</div></div>` : "";
+  $("plans").innerHTML = stars + Object.entries(me.plans).map(([k,p]) => `
     <div class="plan ${k===plan?"sel":""}" data-k="${k}">
       <b>${p.name}</b>
       <div class="pr">${rub(p.price)}</div>
@@ -139,6 +173,13 @@ function tick(){
 setInterval(() => me && tick(), 1000);
 
 $("goPay").onclick = () => show("pay"); $("back").onclick = () => show("home");
+$("goProf").onclick = () => show("prof"); $("profBack").onclick = () => show("home");
+$("forgetBtn").onclick = () => tg.showConfirm("Стереть всё, что я о тебе помню?", async ok => {
+  if (!ok) return; await fetch("/api/forget", {method:"POST", headers:hdr}); me.facts = []; render(); });
+$("refBtn").onclick = () => tg.openTelegramLink("https://t.me/share/url?url=" + encodeURIComponent(me.ref_link) + "&text=" + encodeURIComponent("ИИ, который делает дела за тебя"));
+$("cancelBtn").onclick = () => tg.showConfirm("Отключить автопродление? Доступ сохранится до конца оплаченного периода.", async ok => {
+  if (!ok) return; const r = await fetch("/api/cancel", {method:"POST", headers:hdr});
+  if (r.ok) { me.auto_renew = false; render(); tg.showAlert("Автопродление отключено"); } else tg.showAlert("Не удалось отменить. Telegram → Настройки → Stars → Подписки."); });
 $("buy").onclick = async () => {
   if (me.paid) return tg.showAlert("Подписка уже активна 🎉");
   if (!me.payments) return tg.showAlert("Оплата пока не подключена");

@@ -9,7 +9,11 @@ import aiohttp
 
 from . import config, db
 
-SCOPE = "https://www.googleapis.com/auth/calendar.events"
+SCOPE = " ".join([
+    "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/gmail.compose",  # только черновики/отправка своих писем
+])
 REDIRECT = config.WEBAPP_URL.rstrip("/") + "/oauth/google/callback"
 
 
@@ -47,6 +51,53 @@ async def connect(uid: int, code: str):
     if not body.get("refresh_token"):
         raise RuntimeError("no refresh_token")
     await db.set_google_token(uid, body["refresh_token"])
+
+
+async def access_token(uid: int) -> str | None:
+    refresh = await db.get_google_token(uid)
+    if not (enabled() and refresh):
+        return None
+    return (await _token_request({"refresh_token": refresh, "grant_type": "refresh_token"}))["access_token"]
+
+
+async def create_sheet(uid: int, title: str, rows: list[list]) -> str:
+    """Создаёт таблицу и заполняет. Возвращает ссылку."""
+    token = await access_token(uid)
+    if not token:
+        raise RuntimeError("Google не подключён: попроси пользователя выполнить /calendar")
+    h = {"Authorization": f"Bearer {token}"}
+    async with aiohttp.ClientSession(headers=h) as s:
+        async with s.post("https://sheets.googleapis.com/v4/spreadsheets", json={"properties": {"title": title}}) as r:
+            if r.status != 200:
+                raise RuntimeError(f"sheets create failed: {r.status}")
+            sheet = await r.json()
+        async with s.put(
+            f"https://sheets.googleapis.com/v4/spreadsheets/{sheet['spreadsheetId']}/values/A1",
+            params={"valueInputOption": "USER_ENTERED"}, json={"values": rows},
+        ) as r:
+            if r.status != 200:
+                raise RuntimeError(f"sheets fill failed: {r.status}")
+    return sheet["spreadsheetUrl"]
+
+
+async def create_gmail_draft(uid: int, to: str, subject: str, body: str) -> None:
+    """Только черновик: пользователь сам проверяет и отправляет."""
+    import base64
+    from email.message import EmailMessage
+
+    token = await access_token(uid)
+    if not token:
+        raise RuntimeError("Google не подключён: попроси пользователя выполнить /calendar")
+    msg = EmailMessage()
+    msg["To"], msg["Subject"] = to, subject
+    msg.set_content(body)
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    async with aiohttp.ClientSession() as s, s.post(
+        "https://gmail.googleapis.com/gmail/v1/users/me/drafts",
+        json={"message": {"raw": raw}}, headers={"Authorization": f"Bearer {token}"},
+    ) as r:
+        if r.status != 200:
+            raise RuntimeError(f"gmail draft failed: {r.status}")
 
 
 async def add_event(uid: int, at: datetime, text: str) -> bool:

@@ -1,0 +1,96 @@
+import asyncio
+import hashlib
+import hmac
+import json
+import os
+import time
+from types import SimpleNamespace as NS
+from urllib.parse import urlencode
+
+os.environ.update(TELEGRAM_BOT_TOKEN="1:abc", ANTHROPIC_API_KEY="x", DB_PATH="/tmp/test_bot.db",
+                  STARS_MONTH="500", WEBAPP_URL="https://x.io", SITES_DIR="/tmp/test_sites")
+if os.path.exists("/tmp/test_bot.db"):
+    os.remove("/tmp/test_bot.db")
+
+from aiohttp.test_utils import TestClient, TestServer  # noqa: E402
+
+from bot import ai, db, tools, web  # noqa: E402
+
+
+def run(c):
+    return asyncio.run(c)
+
+
+def test_agent_loop_calls_tool_then_answers(monkeypatch):
+    run(db.init())
+    calls = []
+
+    async def fake_create(**kw):
+        calls.append(kw)
+        if len(calls) == 1:
+            blk = NS(type="tool_use", id="t1", name="remember", input={"fact": "ниша: маникюр"})
+            return NS(content=[blk], stop_reason="tool_use")
+        return NS(content=[NS(type="text", text="Готово")], stop_reason="end_turn")
+
+    monkeypatch.setattr(ai.client.messages, "create", fake_create)
+    ctx = tools.Ctx(7, bot=None)
+    out = run(ai.ask([{"role": "user", "content": "привет"}], ctx=ctx))
+    assert out == "Готово" and len(calls) == 2
+    assert run(db.facts(7)) == ["ниша: маникюр"]
+    assert calls[1]["messages"][-1]["content"][0]["type"] == "tool_result"
+
+
+def test_reminder_rejects_past_and_saves_future():
+    run(db.init())
+    ctx = tools.Ctx(8, bot=None)
+    assert "прошлом" in run(tools.run("set_reminder", {"when": "2001-01-01 10:00", "text": "x"}, ctx))
+    assert "поставлено" in run(tools.run("set_reminder", {"when": "2099-01-01 10:00", "text": "x"}, ctx))
+
+
+def test_tool_error_is_reported_not_raised():
+    ctx = tools.Ctx(9, bot=None)
+    assert "Ошибка" in run(tools.run("instagram_profile", {"username": "a"}, ctx))
+
+
+def test_quota_and_bonus():
+    async def go():
+        await db.init()
+        u = await db.get_user(100, "a")
+        assert db.free_left(u) == 3
+        await db.add_bonus(100, 3)
+        await db.bump_used(100)
+        assert db.free_left(await db.get_user(100)) == 5
+    run(go())
+
+
+def sign(uid):
+    d = {"auth_date": str(int(time.time())), "user": json.dumps({"id": uid, "first_name": "T"})}
+    chk = "\n".join(f"{k}={v}" for k, v in sorted(d.items()))
+    sec = hmac.new(b"WebAppData", b"1:abc", hashlib.sha256).digest()
+    d["hash"] = hmac.new(sec, chk.encode(), hashlib.sha256).hexdigest()
+    return urlencode(d)
+
+
+def test_web_api():
+    async def go():
+        await db.init()
+        links = []
+
+        class FakeBot:
+            async def me(self): return NS(username="b")
+            async def create_invoice_link(self, **kw): links.append(kw); return "https://t.me/$x"
+
+        async with TestClient(TestServer(web.make_app(FakeBot()))) as c:
+            assert (await c.get("/api/me")).status == 401
+            h = {"X-Init-Data": sign(5)}
+            me = await (await c.get("/api/me", headers=h)).json()
+            assert me["stars_price"] == 500 and me["free_left"] == 3 and me["payments"]
+            r = await c.post("/api/invoice", json={"plan": "stars"}, headers=h)
+            assert (await r.json())["link"] and links[0]["subscription_period"] == 2592000
+            assert (await c.post("/api/cancel", headers=h)).status == 400  # нет подписки
+            from bot import services
+            url = services.publish_site("<h1>hi</h1>")
+            r = await c.get("/s/" + url.rsplit("/", 1)[1])
+            assert r.status == 200 and "sandbox" in r.headers["Content-Security-Policy"]
+            assert (await c.get("/s/..%2Fbot")).status == 404
+    run(go())
