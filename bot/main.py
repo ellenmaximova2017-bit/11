@@ -221,7 +221,8 @@ async def buy(c: CallbackQuery):
         elif key == "topup" and config.TOPUP_RUB and config.PAYMENT_TOKEN:
             await bot.send_invoice(c.from_user.id, title=label, description="Разовая докупка запросов к подписке.",
                                    payload=f"topup:{config.TOPUP_RUB}", provider_token=config.PAYMENT_TOKEN,
-                                   currency="RUB", prices=[LabeledPrice(label=label, amount=config.TOPUP_RUB * 100)])
+                                   currency="RUB", prices=[LabeledPrice(label=label, amount=config.TOPUP_RUB * 100)],
+                                   **pricing.receipt_kwargs(label, config.TOPUP_RUB))
         else:
             return await c.answer("Недоступно", show_alert=True)
         return await c.answer()
@@ -245,6 +246,7 @@ async def buy(c: CallbackQuery):
         description="Безлимитный доступ ко всем сценариям. Разовый платёж, без автосписаний.",
         payload=f"{key}:{price}", provider_token=config.PAYMENT_TOKEN, currency="RUB",
         prices=[LabeledPrice(label=name, amount=price * 100)],
+        **pricing.receipt_kwargs(f"Подписка: {name}", price),
     )
     await c.answer()
 

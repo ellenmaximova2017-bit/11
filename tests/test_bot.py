@@ -227,3 +227,16 @@ def test_cinema_kind_and_scenario():
     assert "НЕ" in p and "afisha.yandex.ru" in p
     specs = {t["name"]: t for t in tools.specs(tools.Ctx(1, bot=None))}
     assert "cinema" in specs["find_places"]["input_schema"]["properties"]["kind"]["enum"]
+
+
+def test_yookassa_receipt(monkeypatch):
+    from bot import pricing
+    monkeypatch.setattr(pricing.config, "YOOKASSA_RECEIPT", False)
+    assert pricing.receipt_kwargs("x", 100) == {}
+    monkeypatch.setattr(pricing.config, "YOOKASSA_RECEIPT", True)
+    monkeypatch.setattr(pricing.config, "YOOKASSA_TAX_SYSTEM", "2")
+    kw = pricing.receipt_kwargs("Подписка: Месяц", 1043)
+    rc = json.loads(kw["provider_data"])["receipt"]
+    assert kw["need_email"] and kw["send_email_to_provider"]
+    assert rc["items"][0]["amount"] == {"value": "1043.00", "currency": "RUB"} and rc["tax_system_code"] == 2
+    assert rc["items"][0]["vat_code"] == 1

@@ -81,7 +81,8 @@ async def invoice(request):
                       prices=[LabeledPrice(label=label, amount=config.TOPUP_STARS)])
         elif plan == "topup" and config.TOPUP_RUB and config.PAYMENT_TOKEN:
             kw = dict(payload=f"topup:{config.TOPUP_RUB}", provider_token=config.PAYMENT_TOKEN, currency="RUB",
-                      prices=[LabeledPrice(label=label, amount=config.TOPUP_RUB * 100)])
+                      prices=[LabeledPrice(label=label, amount=config.TOPUP_RUB * 100)],
+                      **pricing.receipt_kwargs(label, config.TOPUP_RUB))
         else:
             raise web.HTTPBadRequest()
         link = await request.app["bot"].create_invoice_link(
@@ -108,6 +109,7 @@ async def invoice(request):
         provider_token=config.PAYMENT_TOKEN,
         currency="RUB",
         prices=[LabeledPrice(label=name, amount=amount * 100)],
+        **pricing.receipt_kwargs(f"Подписка: {name}", amount),
     )
     return web.json_response({"link": link})
 
