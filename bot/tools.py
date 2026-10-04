@@ -54,6 +54,19 @@ def specs(ctx: Ctx) -> list[dict]:
     if config.REPLICATE_API_TOKEN and ctx.last_image:
         t.append({"name": "edit_photo", "description": "Отредактировать последнее присланное пользователем фото по инструкции (убрать человека/предмет, заменить фон, улучшить) и отправить результат ему.",
                   "input_schema": {"type": "object", "properties": {"instruction": {"type": "string", "description": "Что изменить, по-английски"}}, "required": ["instruction"]}})
+    if config.N8N_WEBHOOKS and config.N8N_SECRET:
+        names = sorted(config.N8N_WEBHOOKS)
+        t.append({"name": "run_workflow",
+                  "description": "Запустить заранее настроенный процесс n8n. Доступные:\n" + "\n".join(
+                      f"- {n}: {w.get('description', '')}" + (" [ТРЕБУЕТ ПОДТВЕРЖДЕНИЯ]" if w.get("confirm") else "")
+                      for n, w in sorted(config.N8N_WEBHOOKS.items())) +
+                  "\nПроцессы с пометкой ТРЕБУЕТ ПОДТВЕРЖДЕНИЯ меняют что-то во внешнем мире (публикуют, отправляют): "
+                  "сначала покажи пользователю, что именно будет сделано, и вызывай только после его явного «да».",
+                  "input_schema": {"type": "object", "properties": {
+                      "name": {"type": "string", "enum": names},
+                      "payload": {"type": "object", "description": "Поля, которые принимает процесс"},
+                      "user_confirmed": {"type": "boolean", "description": "true, только если пользователь явно подтвердил действие"}},
+                      "required": ["name", "payload"]}})
     if config.WEBAPP_URL:
         t.append({"name": "publish_site", "description": "Опубликовать одностраничный сайт (полный HTML со встроенным CSS, без внешних скриптов) и получить ссылку.",
                   "input_schema": {"type": "object", "properties": {"html": {"type": "string"}}, "required": ["html"]}})
@@ -122,6 +135,13 @@ async def run(name: str, args: dict, ctx: Ctx) -> str:
             await ctx.bot.send_photo(ctx.uid, BufferedInputFile(img, "result.jpg"))
             ctx.extra_cost += 2
             return "Готово, результат отправлен пользователю."
+        if name == "run_workflow":
+            wf = config.N8N_WEBHOOKS.get(args["name"])
+            if not wf:
+                return "Такого процесса нет."
+            if wf.get("confirm") and not args.get("user_confirmed"):
+                return "Нужно подтверждение: покажи пользователю, что будет сделано, и спроси «да/нет»."
+            return "Ответ n8n: " + await services.call_n8n(args["name"], args.get("payload", {}), ctx.uid)
         if name == "publish_site":
             return "Сайт опубликован: " + services.publish_site(args["html"])
         return f"Неизвестный инструмент {name}"

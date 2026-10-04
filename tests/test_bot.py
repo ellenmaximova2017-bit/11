@@ -240,3 +240,38 @@ def test_yookassa_receipt(monkeypatch):
     assert kw["need_email"] and kw["send_email_to_provider"]
     assert rc["items"][0]["amount"] == {"value": "1043.00", "currency": "RUB"} and rc["tax_system_code"] == 2
     assert rc["items"][0]["vat_code"] == 1
+
+
+def test_n8n_workflow_tool_confirmation_and_callback(monkeypatch):
+    from bot import services
+    wfs = {"avito_publish": {"url": "http://n8n/webhook/x", "description": "Опубликовать объявление", "confirm": True},
+           "lookup": {"url": "http://n8n/webhook/y", "description": "Поиск"}}
+    monkeypatch.setattr(tools.config, "N8N_WEBHOOKS", wfs)
+    monkeypatch.setattr(tools.config, "N8N_SECRET", "s3cret")
+    monkeypatch.setattr(services.config, "N8N_WEBHOOKS", wfs)
+    monkeypatch.setattr(services.config, "N8N_SECRET", "s3cret")
+    spec = next(t for t in tools.specs(tools.Ctx(1, bot=None)) if t["name"] == "run_workflow")
+    assert "avito_publish" in spec["description"] and "ПОДТВЕРЖДЕНИЯ" in spec["description"]
+    sent = []
+    async def fake_call(n, p, uid): sent.append((n, p, uid)); return "ok"
+    monkeypatch.setattr(services, "call_n8n", fake_call)
+    ctx = tools.Ctx(5, bot=None)
+    assert "подтверждение" in run(tools.run("run_workflow", {"name": "avito_publish", "payload": {}}, ctx))
+    assert not sent
+    assert "ok" in run(tools.run("run_workflow", {"name": "avito_publish", "payload": {"a": 1}, "user_confirmed": True}, ctx))
+    assert "ok" in run(tools.run("run_workflow", {"name": "lookup", "payload": {}}, ctx))
+    assert [x[0] for x in sent] == ["avito_publish", "lookup"]
+
+    async def go():
+        await db.init(); await db.get_user(777, "u")
+        msgs = []
+        class FakeBot:
+            async def me(self): return NS(username="b")
+            async def send_message(self, uid, text): msgs.append((uid, text))
+        async with TestClient(TestServer(web.make_app(FakeBot()))) as c:
+            assert (await c.post("/api/n8n/callback", json={"user_id": 777, "text": "hi"})).status == 401
+            h = {"X-Bot-Secret": "s3cret"}
+            assert (await c.post("/api/n8n/callback", json={"user_id": 999999, "text": "hi"}, headers=h)).status == 400
+            assert (await c.post("/api/n8n/callback", json={"user_id": 777, "text": "готово"}, headers=h)).status == 200
+        assert msgs == [(777, "готово")]
+    run(go())

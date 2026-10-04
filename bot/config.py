@@ -42,3 +42,10 @@ YANDEX_GEOCODER_KEY = os.getenv("YANDEX_GEOCODER_KEY", "")
 YOOKASSA_RECEIPT = os.getenv("YOOKASSA_RECEIPT", "0") == "1"
 YOOKASSA_VAT_CODE = int(os.getenv("YOOKASSA_VAT_CODE", "1"))
 YOOKASSA_TAX_SYSTEM = os.getenv("YOOKASSA_TAX_SYSTEM", "")
+import json as _json
+
+N8N_SECRET = os.getenv("N8N_SECRET", "")
+try:
+    N8N_WEBHOOKS = _json.loads(os.getenv("N8N_WEBHOOKS") or "{}")
+except ValueError:
+    N8N_WEBHOOKS = {}

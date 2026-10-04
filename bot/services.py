@@ -286,3 +286,18 @@ async def yandex_places(lat, lon, kind="restaurant", cuisine="", radius=1000, li
         "rspn": 1, "results": 20,
     })
     return sorted(parse_yandex(data.get("features", []), lat, lon), key=lambda x: x["distance_m"])[:limit]
+
+
+# ---------- n8n ----------
+async def call_n8n(name: str, payload: dict, uid: int) -> str:
+    """Вызывает webhook из N8N_WEBHOOKS. URL берётся только из настроек, модель выбирает лишь имя."""
+    wf = config.N8N_WEBHOOKS.get(name)
+    if not wf or not config.N8N_SECRET:
+        raise RuntimeError("Процесс n8n не настроен")
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=55)) as s, s.post(
+        wf["url"], json={"user_id": uid, "payload": payload}, headers={"X-Bot-Secret": config.N8N_SECRET}
+    ) as r:
+        text = (await r.text())[:4000]
+        if r.status != 200:
+            raise RuntimeError(f"n8n вернул {r.status}")
+        return text or "Готово (n8n не вернул текст)."

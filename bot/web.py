@@ -114,6 +114,19 @@ async def invoice(request):
     return web.json_response({"link": link})
 
 
+async def n8n_callback(request):
+    """n8n присылает результат долгого процесса: POST {user_id, text} с заголовком X-Bot-Secret."""
+    given = request.headers.get("X-Bot-Secret", "")
+    if not config.N8N_SECRET or not hmac.compare_digest(given, config.N8N_SECRET):
+        raise web.HTTPUnauthorized()
+    body = await request.json()
+    uid, text = body.get("user_id"), str(body.get("text", ""))[:4000]
+    if not isinstance(uid, int) or not text or not await db.exists(uid):
+        raise web.HTTPBadRequest()
+    await request.app["bot"].send_message(uid, text)
+    return web.json_response({"ok": True})
+
+
 async def cancel(request):
     tg_user = await _auth(request)
     user = await db.get_user(tg_user["id"])
@@ -168,6 +181,7 @@ def make_app(bot) -> web.Application:
     app.router.add_get("/api/me", me)
     app.router.add_post("/api/invoice", invoice)
     app.router.add_post("/api/cancel", cancel)
+    app.router.add_post("/api/n8n/callback", n8n_callback)
     app.router.add_post("/api/forget", forget)
     app.router.add_get("/s/{slug}", site)
     app.router.add_get("/oauth/google/callback", google_callback)

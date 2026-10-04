@@ -198,3 +198,7 @@ async def chat_since(chat_id, since_ts, limit=400):
 
 async def purge_chat_log(days=7):
     await _exec("DELETE FROM chat_log WHERE ts<?", (int(time.time()) - days * 86400,))
+
+
+async def exists(uid) -> bool:
+    return await _one("SELECT 1 FROM users WHERE id=?", (uid,)) is not None
