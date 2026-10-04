@@ -217,3 +217,53 @@ async def dgis_places(lat, lon, kind="restaurant", cuisine="", radius=1000, limi
         "fields": "items.point,items.address_name,items.rubrics,items.reviews,items.schedule,items.contact_groups",
     })
     return sorted(parse_dgis(res.get("items", []), lat, lon), key=lambda x: x["distance_m"])[:limit]
+
+
+# ---------- Яндекс (Поиск по организациям + Геокодер) ----------
+async def _yget(url: str, params: dict) -> dict:
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=20)) as s, s.get(url, params=params) as r:
+        if r.status != 200:
+            raise RuntimeError(f"Яндекс вернул {r.status}")
+        return await r.json(content_type=None)
+
+
+async def yandex_geocode(address: str) -> tuple[float, float, str]:
+    data = await _yget("https://geocode-maps.yandex.ru/1.x/", {
+        "apikey": config.YANDEX_GEOCODER_KEY, "geocode": address, "format": "json", "results": 1, "lang": "ru_RU"})
+    members = data["response"]["GeoObjectCollection"]["featureMember"]
+    if not members:
+        raise RuntimeError("Адрес не найден")
+    g = members[0]["GeoObject"]
+    lon, lat = map(float, g["Point"]["pos"].split())
+    return lat, lon, g["metaDataProperty"]["GeocoderMetaData"]["text"]
+
+
+def parse_yandex(features: list[dict], lat: float, lon: float) -> list[dict]:
+    out = []
+    for f in features:
+        meta = f.get("properties", {}).get("CompanyMetaData", {})
+        coords = f.get("geometry", {}).get("coordinates")
+        if not coords or not meta.get("name"):
+            continue
+        out.append({
+            "name": meta["name"], "address": meta.get("address", ""),
+            "cuisine": ", ".join(c.get("name", "") for c in meta.get("Categories", [])[:3]),
+            "distance_m": haversine(lat, lon, coords[1], coords[0]),
+            "hours": (meta.get("Hours") or {}).get("text", ""),
+            "phone": next((p.get("formatted", "") for p in meta.get("Phones", [])), ""),
+            "website": meta.get("url", ""),
+            "map": f"https://yandex.ru/maps/?pt={coords[0]},{coords[1]}&z=17&l=map", "source": "Яндекс Карты",
+        })
+    return out
+
+
+async def yandex_places(lat, lon, kind="restaurant", cuisine="", radius=1000, limit=10) -> list[dict]:
+    radius = max(100, min(int(radius), 3000))
+    dlat = 2 * radius / 111000
+    dlon = dlat / max(math.cos(math.radians(lat)), 0.01)
+    data = await _yget("https://search-maps.yandex.ru/v1/", {
+        "apikey": config.YANDEX_SEARCH_KEY, "text": f"{KIND_RU.get(kind, 'ресторан')} {cuisine}".strip(),
+        "type": "biz", "lang": "ru_RU", "ll": f"{lon},{lat}", "spn": f"{dlon:.5f},{dlat:.5f}",
+        "rspn": 1, "results": 20,
+    })
+    return sorted(parse_yandex(data.get("features", []), lat, lon), key=lambda x: x["distance_m"])[:limit]

@@ -29,7 +29,7 @@ def specs(ctx: Ctx) -> list[dict]:
              "when": {"type": "string", "description": "YYYY-MM-DD HH:MM, UTC+3"}, "text": {"type": "string"}},
              "required": ["when", "text"]}},
     ]
-    t.append({"name": "find_places", "description": "Найти рестораны/кафе/бары рядом с адресом или с геопозицией пользователя (данные 2ГИС или OpenStreetMap: название, рейтинг и отзывы — если есть в данных, кухня, адрес, расстояние, часы, телефон, ссылка на карту). Если рейтинга в данных нет — не выдумывай его; можно дополнить веб-поиском с указанием источника. Укажи пользователю источник данных.",
+    t.append({"name": "find_places", "description": "Найти рестораны/кафе/бары рядом с адресом или с геопозицией пользователя (данные 2ГИС, Яндекс Карт или OpenStreetMap: название, рейтинг и отзывы — если есть в данных, кухня, адрес, расстояние, часы, телефон, ссылка на карту). Если рейтинга в данных нет — не выдумывай его; можно дополнить веб-поиском с указанием источника. Укажи пользователю источник данных.",
               "input_schema": {"type": "object", "properties": {
                   "address": {"type": "string", "description": "Адрес/место; не указывай, если нужно искать рядом с геопозицией пользователя"},
                   "kind": {"type": "string", "enum": sorted(services.KINDS)},
@@ -59,14 +59,16 @@ def specs(ctx: Ctx) -> list[dict]:
     return t
 
 
-async def _first(primary, fallback, *args):
-    """Пробует основной источник, при ошибке — запасной."""
-    if primary:
+async def _first(funcs, *args):
+    """Пробует источники по порядку; ошибка предыдущего не мешает следующему."""
+    last = None
+    for f in funcs:
         try:
-            return await primary(*args)
-        except Exception:
-            logging.exception("primary source failed, using fallback")
-    return await fallback(*args)
+            return await f(*args)
+        except Exception as e:
+            logging.exception("source %s failed", getattr(f, "__name__", f))
+            last = e
+    raise last
 
 
 async def run(name: str, args: dict, ctx: Ctx) -> str:
@@ -87,26 +89,28 @@ async def run(name: str, args: dict, ctx: Ctx) -> str:
             await gcal.create_gmail_draft(ctx.uid, args["to"], args["subject"], args["body"])
             return "Черновик создан в Gmail."
         if name == "find_places":
-            src = "OpenStreetMap"
+            geocoders = [g for ok, g in ((config.DGIS_API_KEY, services.dgis_geocode),
+                                         (config.YANDEX_GEOCODER_KEY, services.yandex_geocode),
+                                         (True, services.geocode)) if ok]
+            finders = [(n, f) for ok, n, f in ((config.DGIS_API_KEY, "2ГИС", services.dgis_places),
+                                               (config.YANDEX_SEARCH_KEY, "Яндекс Карты", services.yandex_places),
+                                               (True, "OpenStreetMap", services.nearby_places)) if ok]
             if args.get("address"):
-                lat, lon, shown = await _first(config.DGIS_API_KEY and services.dgis_geocode, services.geocode,
-                                               args["address"])
+                lat, lon, shown = await _first(geocoders, args["address"])
             elif ctx.location:
                 (lat, lon), shown = ctx.location, "геопозиция пользователя"
             else:
                 return "Нужен адрес или геопозиция: попроси пользователя прислать адрес или нажать «Отправить геопозицию»."
             a = (lat, lon, args.get("kind", "restaurant"), args.get("cuisine", ""), args.get("radius_m", 1000))
-            places = []
-            if config.DGIS_API_KEY:
+            for src, finder in finders:  # первый источник, который дал результат
                 try:
-                    places, src = await services.dgis_places(*a), "2ГИС"
+                    places = await finder(*a)
                 except Exception:
-                    logging.exception("2gis failed, fallback to OSM")
-            if not places:
-                places, src = await services.nearby_places(*a), "OpenStreetMap"
-            if not places:
-                return f"Рядом с «{shown}» ничего не найдено: предложи увеличить радиус или поискать через веб."
-            return f"Источник: {src}. Центр поиска: {shown}\n" + "\n".join(str(x) for x in places)
+                    logging.exception("%s failed, trying next source", src)
+                    continue
+                if places:
+                    return f"Источник: {src}. Центр поиска: {shown}\n" + "\n".join(str(x) for x in places)
+            return f"Рядом с «{shown}» ничего не найдено: предложи увеличить радиус или поискать через веб."
         if name == "instagram_profile":
             result = await services.instagram_profile(args["username"])
             ctx.extra_cost += 1

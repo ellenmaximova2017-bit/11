@@ -172,7 +172,31 @@ def test_2gis_parse_and_fallback(monkeypatch):
     async def boom(*a, **k): raise RuntimeError("2ГИС вернул 403")
     async def osm(*a, **k): return [{"name": "OSM-кафе", "distance_m": 5}]
     monkeypatch.setattr(tools.config, "DGIS_API_KEY", "k")
+    monkeypatch.setattr(tools.config, "YANDEX_SEARCH_KEY", "")
     monkeypatch.setattr(services, "dgis_places", boom)
     monkeypatch.setattr(services, "nearby_places", osm)
     out = run(tools.run("find_places", {}, tools.Ctx(1, bot=None, location=(54.71, 55.95))))
     assert "OpenStreetMap" in out and "OSM-кафе" in out
+
+
+def test_yandex_parse_and_chain_order(monkeypatch):
+    from bot import services
+    feats = [{"geometry": {"coordinates": [55.9501, 54.7101]},
+              "properties": {"CompanyMetaData": {"name": "Ясли", "address": "Ленина, 2",
+                                                  "Categories": [{"name": "Ресторан"}], "Hours": {"text": "ежедневно, 10:00–23:00"},
+                                                  "Phones": [{"formatted": "+7 (347) 111-11-11"}], "url": "http://y.ru"}}},
+             {"geometry": {"coordinates": [1, 1]}, "properties": {"CompanyMetaData": {}}}]
+    r = services.parse_yandex(feats, 54.71, 55.95)
+    assert len(r) == 1 and r[0]["phone"].startswith("+7") and r[0]["source"] == "Яндекс Карты"
+
+    order = []
+    async def d(*a, **k): order.append("2gis"); raise RuntimeError("x")
+    async def y(*a, **k): order.append("yandex"); return [{"name": "Ясли", "distance_m": 1}]
+    async def o(*a, **k): order.append("osm"); return []
+    monkeypatch.setattr(tools.config, "DGIS_API_KEY", "k")
+    monkeypatch.setattr(tools.config, "YANDEX_SEARCH_KEY", "k")
+    monkeypatch.setattr(services, "dgis_places", d)
+    monkeypatch.setattr(services, "yandex_places", y)
+    monkeypatch.setattr(services, "nearby_places", o)
+    out = run(tools.run("find_places", {}, tools.Ctx(1, bot=None, location=(54.71, 55.95))))
+    assert order == ["2gis", "yandex"] and "Источник: Яндекс Карты" in out
