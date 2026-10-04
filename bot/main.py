@@ -26,6 +26,7 @@ current: dict[int, str] = {}        # user_id -> выбранный сценар
 last_image: dict[int, bytes] = {}   # user_id -> последнее фото (для edit_photo)
 last_location: dict[int, tuple[float, float]] = {}  # только в памяти, в базу не пишем
 locks: dict[int, asyncio.Lock] = {}
+LOCATION_SCENARIOS = {"food", "master"}  # сценарии, где просим геопозицию
 PRIVATE = F.chat.type == "private"
 GROUP = F.chat.type.in_({"group", "supergroup"})
 
@@ -89,7 +90,7 @@ async def balance(m: Message):
 WELCOME = (
     "<b>Что умеет этот бот?</b>\nИИ, который общается и делает за тебя\n\n"
     "Например:\n📦 Продать на Авито\n💰 Найти клиентов\n🛒 Купить выгоднее\n📄 Разобрать договор\n"
-    "🎨 Поправить фото\n🍽 Найти ресторан рядом\n\nИ ещё десятки сценариев. Можно писать текстом, голосом, слать фото и PDF.\n"
+    "🎨 Поправить фото\n🍽 Найти ресторан рядом\n🔧 Электрик, сантехник, мастер на дом\n\nИ ещё десятки сценариев. Можно писать текстом, голосом, слать фото и PDF.\n"
     "Первые {n} запроса бесплатно."
 )
 
@@ -113,7 +114,7 @@ async def start(m: Message, command: CommandObject):
     if arg.startswith("sc_") and arg[3:] in SCENARIOS:  # пришли из Mini App
         current[uid] = arg[3:]
         kb = (ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="📍 Отправить геопозицию", request_location=True)]],
-                                  resize_keyboard=True, one_time_keyboard=True) if arg[3:] == "food" else None)
+                                  resize_keyboard=True, one_time_keyboard=True) if arg[3:] in LOCATION_SCENARIOS else None)
         await m.answer(SCENARIOS[arg[3:]]["ask"], reply_markup=kb)
         return
     text = WELCOME.format(n=config.FREE_MESSAGES)
@@ -198,7 +199,7 @@ async def pick(c: CallbackQuery):
     key = c.data[3:]
     current[c.from_user.id] = key
     kb = None
-    if key == "food":
+    if key in LOCATION_SCENARIOS:
         kb = ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="📍 Отправить геопозицию", request_location=True)]],
                                  resize_keyboard=True, one_time_keyboard=True)
     await c.message.answer(SCENARIOS[key]["ask"], reply_markup=kb)
@@ -351,9 +352,12 @@ async def handle(m: Message):
 @dp.message(F.location, PRIVATE)
 async def handle_location(m: Message):
     last_location[m.from_user.id] = (m.location.latitude, m.location.longitude)
-    current.setdefault(m.from_user.id, "food")
+    uid = m.from_user.id
+    if current.get(uid) not in LOCATION_SCENARIOS:
+        current[uid] = "food"
     await m.answer("📍 Принял. Геопозицию храню только в памяти бота, пока он работает.", reply_markup=ReplyKeyboardRemove())
-    await run(m, "Найди, где поесть рядом с моей геопозицией.")
+    await run(m, "Найди мастера рядом с моей геопозицией." if current[uid] == "master"
+              else "Найди, где поесть рядом с моей геопозицией.")
 
 
 @dp.message(F.photo, PRIVATE)

@@ -128,11 +128,30 @@ def haversine(lat1, lon1, lat2, lon2) -> int:
 KINDS = {"restaurant", "cafe", "fast_food", "bar", "pub"}
 
 
+CRAFTS = (  # подстрока запроса -> тег craft в OSM
+    ("электр", "electrician"), ("electric", "electrician"), ("сантех", "plumber"), ("plumb", "plumber"),
+    ("плотник", "carpenter"), ("carpent", "carpenter"), ("отоплен", "hvac"), ("кондиц", "hvac"), ("hvac", "hvac"),
+    ("маляр", "painter"), ("painter", "painter"), ("кровел", "roofer"), ("roof", "roofer"),
+    ("замк", "locksmith"), ("lock", "locksmith"), ("мастер", "handyman"), ("handyman", "handyman"),
+    ("мебел", "carpenter"), ("ремонт", "handyman"),
+)
+
+
+def osm_filter(kind: str) -> str | None:
+    """Фильтр Overpass для категории: еда (amenity) или ремесло (craft); None — в OSM такого нет."""
+    if kind in KINDS:
+        return f'["amenity"="{kind}"]'
+    k = kind.lower()
+    return next((f'["craft"="{tag}"]' for key, tag in CRAFTS if key in k), None)
+
+
 async def nearby_places(lat: float, lon: float, kind: str = "restaurant", cuisine: str = "",
                         radius: int = 1000, limit: int = 10) -> list[dict]:
-    kind = kind if kind in KINDS else "restaurant"
+    flt = osm_filter(kind)
+    if not flt:
+        return []
     radius = max(100, min(int(radius), 3000))
-    q = f'[out:json][timeout:25];nwr["amenity"="{kind}"](around:{radius},{lat},{lon});out center 80;'
+    q = f'[out:json][timeout:25];nwr{flt}(around:{radius},{lat},{lon});out center 80;'
     out = []
     for el in (await _overpass(q)).get("elements", []):
         t = el.get("tags", {})
@@ -210,7 +229,7 @@ def parse_dgis(items: list[dict], lat: float, lon: float) -> list[dict]:
 
 
 async def dgis_places(lat, lon, kind="restaurant", cuisine="", radius=1000, limit=10) -> list[dict]:
-    q = f"{KIND_RU.get(kind, 'ресторан')} {cuisine}".strip()
+    q = f"{KIND_RU.get(kind, kind)} {cuisine}".strip()
     res = await _dgis("", {
         "q": q, "point": f"{lon},{lat}", "radius": max(100, min(int(radius), 3000)),
         "sort": "distance", "sort_point": f"{lon},{lat}", "page_size": 20,
@@ -262,7 +281,7 @@ async def yandex_places(lat, lon, kind="restaurant", cuisine="", radius=1000, li
     dlat = 2 * radius / 111000
     dlon = dlat / max(math.cos(math.radians(lat)), 0.01)
     data = await _yget("https://search-maps.yandex.ru/v1/", {
-        "apikey": config.YANDEX_SEARCH_KEY, "text": f"{KIND_RU.get(kind, 'ресторан')} {cuisine}".strip(),
+        "apikey": config.YANDEX_SEARCH_KEY, "text": f"{KIND_RU.get(kind, kind)} {cuisine}".strip(),
         "type": "biz", "lang": "ru_RU", "ll": f"{lon},{lat}", "spn": f"{dlon:.5f},{dlat:.5f}",
         "rspn": 1, "results": 20,
     })

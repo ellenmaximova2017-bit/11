@@ -29,10 +29,11 @@ def specs(ctx: Ctx) -> list[dict]:
              "when": {"type": "string", "description": "YYYY-MM-DD HH:MM, UTC+3"}, "text": {"type": "string"}},
              "required": ["when", "text"]}},
     ]
-    t.append({"name": "find_places", "description": "Найти рестораны/кафе/бары рядом с адресом или с геопозицией пользователя (данные 2ГИС, Яндекс Карт или OpenStreetMap: название, рейтинг и отзывы — если есть в данных, кухня, адрес, расстояние, часы, телефон, ссылка на карту). Если рейтинга в данных нет — не выдумывай его; можно дополнить веб-поиском с указанием источника. Укажи пользователю источник данных.",
+    t.append({"name": "find_places", "description": "Найти организации рядом с адресом или геопозицией пользователя: рестораны/кафе/бары или услуги (электрик, сантехник, мастер на дом и т.п. — через query). Данные 2ГИС, Яндекс Карт или OpenStreetMap: название, рейтинг и отзывы — если есть в данных, кухня, адрес, расстояние, часы, телефон, ссылка на карту). Если рейтинга в данных нет — не выдумывай его; можно дополнить веб-поиском с указанием источника. Укажи пользователю источник данных.",
               "input_schema": {"type": "object", "properties": {
                   "address": {"type": "string", "description": "Адрес/место; не указывай, если нужно искать рядом с геопозицией пользователя"},
-                  "kind": {"type": "string", "enum": sorted(services.KINDS)},
+                  "kind": {"type": "string", "enum": sorted(services.KINDS), "description": "Для еды"},
+                  "query": {"type": "string", "description": "Свободная категория вместо kind, по-русски: «электрик», «сантехник», «мастер на дом», «ремонт техники»"},
                   "cuisine": {"type": "string", "description": "Например итальянская, суши, грузинская (по-русски для 2ГИС; для OSM — italian, sushi)"},
                   "radius_m": {"type": "integer", "description": "100-3000, по умолчанию 1000"}}}})
     if gcal.enabled():
@@ -101,7 +102,8 @@ async def run(name: str, args: dict, ctx: Ctx) -> str:
                 (lat, lon), shown = ctx.location, "геопозиция пользователя"
             else:
                 return "Нужен адрес или геопозиция: попроси пользователя прислать адрес или нажать «Отправить геопозицию»."
-            a = (lat, lon, args.get("kind", "restaurant"), args.get("cuisine", ""), args.get("radius_m", 1000))
+            a = (lat, lon, args.get("query") or args.get("kind", "restaurant"), args.get("cuisine", ""),
+                 args.get("radius_m", 1000))
             for src, finder in finders:  # первый источник, который дал результат
                 try:
                     places = await finder(*a)

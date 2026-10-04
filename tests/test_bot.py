@@ -200,3 +200,20 @@ def test_yandex_parse_and_chain_order(monkeypatch):
     monkeypatch.setattr(services, "nearby_places", o)
     out = run(tools.run("find_places", {}, tools.Ctx(1, bot=None, location=(54.71, 55.95))))
     assert order == ["2gis", "yandex"] and "Источник: Яндекс Карты" in out
+
+
+def test_service_search_categories(monkeypatch):
+    from bot import services
+    assert services.osm_filter("restaurant") == '["amenity"="restaurant"]'
+    assert services.osm_filter("Электрик на дом") == '["craft"="electrician"]'
+    assert services.osm_filter("сантехник") == '["craft"="plumber"]'
+    assert services.osm_filter("юрист") is None
+    assert run(services.nearby_places(54.7, 55.9, "юрист")) == []  # в OSM нет — без сетевого запроса
+
+    seen = {}
+    async def y(lat, lon, kind, *a, **k): seen["kind"] = kind; return [{"name": "СантехСервис", "distance_m": 3}]
+    monkeypatch.setattr(tools.config, "DGIS_API_KEY", "")
+    monkeypatch.setattr(tools.config, "YANDEX_SEARCH_KEY", "k")
+    monkeypatch.setattr(services, "yandex_places", y)
+    out = run(tools.run("find_places", {"query": "сантехник"}, tools.Ctx(1, bot=None, location=(54.7, 55.9))))
+    assert seen["kind"] == "сантехник" and "СантехСервис" in out
