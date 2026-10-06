@@ -5,7 +5,7 @@ const VERT = `attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}`;
 const FRAG = `
 precision mediump float;
 uniform vec2 uRes;uniform float uTime;
-uniform vec3 uA;uniform vec3 uB;uniform vec3 uC;
+uniform vec3 uBg;uniform vec3 uA;uniform vec3 uB;uniform vec3 uC;
 void main(){
   vec2 uv=(gl_FragCoord.xy*2.-uRes)/min(uRes.x,uRes.y);
   float t=uTime;
@@ -18,12 +18,14 @@ void main(){
   vec3 col=mix(uA,uB,m);
   col=mix(col,uC,n*.55);
   float vig=smoothstep(2.4,.2,length((gl_FragCoord.xy/uRes-.5)*vec2(1.6,1.)));
-  gl_FragColor=vec4(col*vig,1.);
+  gl_FragColor=vec4(mix(uBg,col,vig),1.);
 }`;
 
 const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
 
-export default function ColorBends({ colors = ['#0a0a0b', '#31410f', '#c8f560'], speed = 1, className = '' }) {
+const LAGOON = ['#12b5c3', '#7fe1dc', '#ffffff'];
+
+export default function ColorBends({ colors = LAGOON, bg = '#e9fbfa', speed = 1, className = '' }) {
   const ref = useRef(null);
 
   useEffect(() => {
@@ -53,6 +55,7 @@ export default function ColorBends({ colors = ['#0a0a0b', '#31410f', '#c8f560'],
 
     const u = (n) => gl.getUniformLocation(prog, n);
     const [a, b, c] = colors.map(hex);
+    gl.uniform3fv(u('uBg'), hex(bg));
     gl.uniform3fv(u('uA'), a);
     gl.uniform3fv(u('uB'), b);
     gl.uniform3fv(u('uC'), c);
@@ -89,7 +92,7 @@ export default function ColorBends({ colors = ['#0a0a0b', '#31410f', '#c8f560'],
       io.disconnect();
       window.removeEventListener('resize', resize);
     };
-  }, [colors, speed]);
+  }, [colors, bg, speed]);
 
   return <canvas ref={ref} className={'bends ' + className} aria-hidden="true" />;
 }
