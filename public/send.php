@@ -39,12 +39,13 @@ $clean = function ($v, int $max): string {
 $name    = $clean($d['name'] ?? '', 100);
 $contact = $clean($d['contact'] ?? '', 120);
 $plan    = $clean($d['plan'] ?? '', 40);
+$type    = $clean($d['type'] ?? '', 40);
 $comment = $clean($d['comment'] ?? '', 2000);
 $page    = $clean($d['page'] ?? '', 200);
 
 if (mb_strlen($name) < 2 || mb_strlen($contact) < 2) reply(422, false, 'Заполните имя и контакт');
 
-$text = "Новая заявка с сайта " . SITE_NAME . "\n\n"
+$text = ($type !== '' ? mb_strtoupper($type) : 'Заявка') . " — сайт " . SITE_NAME . "\n\n"
       . "Имя: $name\nКонтакт: $contact\nТариф: $plan\n"
       . "Комментарий: " . ($comment !== '' ? $comment : '—') . "\n\n"
       . "Страница: $page\nIP: $ip\nВремя: " . date('d.m.Y H:i') . "\n";
@@ -52,7 +53,7 @@ $text = "Новая заявка с сайта " . SITE_NAME . "\n\n"
 $sent = false;
 
 if (TO_EMAIL !== '') {
-    $subject = '=?UTF-8?B?' . base64_encode('Заявка с сайта ' . SITE_NAME) . '?=';
+    $subject = '=?UTF-8?B?' . base64_encode((($type !== '' ? $type : 'Заявка') . ' — ' . SITE_NAME)) . '?=';
     $headers = "From: " . SITE_NAME . " <" . FROM_EMAIL . ">\r\n"
              . "MIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n";
     $sent = mail(TO_EMAIL, $subject, $text, $headers) || $sent;

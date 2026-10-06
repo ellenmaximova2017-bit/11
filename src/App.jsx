@@ -36,14 +36,14 @@ function Header() {
         <nav className={'menu' + (open ? ' open' : '')} aria-label="Основное меню" onClick={(e) => e.target.tagName === 'A' && setOpen(false)}>
           {NAV.map(([h, t]) => <a key={h} href={h}>{t}</a>)}
         </nav>
-        <a href="#contact" className="btn btn--sm nav__cta">Обсудить проект</a>
+        <a href="#contact" className="btn btn--sm nav__cta">Получить прайс</a>
         <button className="burger" aria-label="Открыть меню" aria-expanded={open} onClick={() => setOpen(!open)}><span /><span /></button>
       </div>
     </header>
   );
 }
 
-function Hero() {
+function Hero({ setKind }) {
   return (
     <section className="hero">
       <ColorBends className="hero__bg" />
@@ -52,8 +52,8 @@ function Hero() {
         <h1 className="reveal in">Освободим до 30 часов в неделю: внедрим ИИ в ваш бизнес за 14 дней</h1>
         <p className="lead reveal in">Автоматизируем рутину на Wildberries, Ozon и других площадках, в продажах, поддержке и контенте — так, чтобы команда занималась ростом, а не копированием между вкладками.</p>
         <div className="hero__cta reveal in">
-          <a href="#contact" className="btn">Получить бесплатный аудит</a>
-          <a href="#services" className="btn btn--ghost">Что можем автоматизировать</a>
+          <a href="#contact" className="btn" onClick={() => setKind('Получить прайс')}>Получить прайс</a>
+          <a href="#contact" className="btn btn--ghost" onClick={() => setKind('Оставить заявку')}>Оставить заявку</a>
         </div>
         <ul className="stats reveal in">
           {STATS.map(([b, s]) => <li key={b}><b>{b}</b><span>{s}</span></li>)}
@@ -63,7 +63,7 @@ function Hero() {
   );
 }
 
-function ContactForm({ plan, setPlan }) {
+function ContactForm({ plan, setPlan, kind, setKind }) {
   const [msg, setMsg] = useState({ text: '', cls: '' });
   const [busy, setBusy] = useState(false);
   const [bad, setBad] = useState({});
@@ -81,7 +81,7 @@ function ContactForm({ plan, setPlan }) {
       setMsg({ text: 'Заполните имя, контакт и подтвердите согласие.', cls: 'err' });
       return;
     }
-    const data = { name, contact, plan, comment: String(fd.get('comment') || '').trim(), page: location.href };
+    const data = { type: kind, name, contact, plan, comment: String(fd.get('comment') || '').trim(), page: location.href };
     setBusy(true); setMsg({ text: 'Отправляем…', cls: '' });
     try {
       if (CONFIG.FORM_ENDPOINT) {
@@ -91,9 +91,10 @@ function ContactForm({ plan, setPlan }) {
         console.info('Заявка (демо-режим, FORM_ENDPOINT не задан):', data);
         await new Promise((r) => setTimeout(r, 400));
       }
-      track('lead_submit');
+      track(kind === 'Получить прайс' ? 'price_request' : 'lead_submit');
+      if (kind === 'Получить прайс') track('lead_submit');
       f.reset(); setPlan('Не определился');
-      setMsg({ text: 'Спасибо! Заявка отправлена — свяжемся в течение рабочего дня.', cls: 'ok' });
+      setMsg({ text: kind === 'Получить прайс' ? 'Спасибо! Пришлём прайс в течение рабочего дня.' : 'Спасибо! Заявка отправлена — свяжемся в течение рабочего дня.', cls: 'ok' });
     } catch {
       setMsg({ text: 'Не удалось отправить. Попробуйте ещё раз или напишите нам напрямую.', cls: 'err' });
     }
@@ -102,6 +103,11 @@ function ContactForm({ plan, setPlan }) {
 
   return (
     <form className="form reveal in" onSubmit={onSubmit} noValidate>
+      <div className="seg" role="group" aria-label="Что вам нужно">
+        {['Получить прайс', 'Оставить заявку'].map((k) => (
+          <button type="button" key={k} className={'seg__b' + (kind === k ? ' on' : '')} aria-pressed={kind === k} onClick={() => setKind(k)}>{k}</button>
+        ))}
+      </div>
       <label>Имя
         <input type="text" name="name" autoComplete="name" placeholder="Как к вам обращаться" className={bad.name ? 'invalid' : ''} />
       </label>
@@ -119,7 +125,7 @@ function ContactForm({ plan, setPlan }) {
       </label>
       <label className="check"><input type="checkbox" name="agree" /> Согласен на обработку персональных данных</label>
       <input type="text" name="website" className="hp" tabIndex={-1} autoComplete="off" aria-hidden="true" />
-      <button className="btn btn--block" type="submit" disabled={busy}>Отправить заявку</button>
+      <button className="btn btn--block" type="submit" disabled={busy}>{kind === 'Получить прайс' ? 'Получить прайс' : 'Отправить заявку'}</button>
       <p className={'form__msg ' + msg.cls} role="status" aria-live="polite">{msg.text}</p>
     </form>
   );
@@ -127,6 +133,7 @@ function ContactForm({ plan, setPlan }) {
 
 export default function App() {
   const [plan, setPlan] = useState('Не определился');
+  const [kind, setKind] = useState('Получить прайс');
   useEffect(initAnalytics, []);
 
   return (
@@ -134,7 +141,7 @@ export default function App() {
       <a className="skip" href="#top">К содержимому</a>
       <Header />
       <main id="top">
-        <Hero />
+        <Hero setKind={setKind} />
 
         <section className="sec" id="about">
           <div className="wrap grid2">
@@ -202,7 +209,7 @@ export default function App() {
                   <p className="plan__for">{p.who}</p>
                   <p className="plan__price">{p.price}</p>
                   <ul>{p.items.map((it) => <li key={it}>{it}</li>)}</ul>
-                  <a href="#contact" className={'btn' + (p.hot ? '' : ' btn--ghost')} onClick={() => { setPlan(p.n); track('select_plan'); }}>Выбрать</a>
+                  <a href="#contact" className={'btn' + (p.hot ? '' : ' btn--ghost')} onClick={() => { setPlan(p.n); setKind('Оставить заявку'); track('select_plan'); }}>Выбрать</a>
                 </Reveal>
               ))}
             </div>
@@ -220,10 +227,10 @@ export default function App() {
           <div className="wrap grid2">
             <div>
               <Reveal as="p" className="eyebrow">Следующий шаг</Reveal>
-              <Reveal as="h2">Расскажите о задаче — вернёмся с планом внедрения</Reveal>
-              <Reveal as="p">Оставьте заявку, и мы свяжемся в течение рабочего дня, чтобы назначить бесплатный созвон.</Reveal>
+              <Reveal as="h2">Получите прайс или расскажите о задаче</Reveal>
+              <Reveal as="p">Прайс пришлём в течение рабочего дня. Если оставите заявку, назначим бесплатный созвон и обсудим внедрение.</Reveal>
             </div>
-            <ContactForm plan={plan} setPlan={setPlan} />
+            <ContactForm plan={plan} setPlan={setPlan} kind={kind} setKind={setKind} />
           </div>
         </section>
       </main>
