@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import ColorBends from './ColorBends.jsx';
 import { CONFIG } from './config.js';
 import { initAnalytics, track } from './analytics.js';
-import { NAV, STATS, SERVICES, WHY, STEPS, CASES, REVIEWS, PLANS, FAQ } from './data.js';
+import { NAV, STATS, SERVICES, WHY, STEPS, PLANS, FAQ } from './data.js';
 
 /* Плавное появление при прокрутке; без IntersectionObserver блок сразу виден */
 function Reveal({ as: Tag = 'div', className = '', children, ...rest }) {
@@ -187,40 +187,7 @@ export default function App() {
           </div>
         </section>
 
-        <section className="sec" id="cases">
-          <div className="wrap">
-            <Reveal as="p" className="eyebrow">Кейсы</Reveal>
-            <Reveal as="h2">Типовые сценарии внедрения</Reveal>
-            <Reveal as="p" className="note">Ниже — примеры задач, которые мы решаем. Реальные кейсы с цифрами клиентов добавляются по мере согласования публикации.</Reveal>
-            <div className="cards cards--3">
-              {CASES.map((c) => (
-                <Reveal as="article" key={c.t} className="case">
-                  <span className="tag">{c.tag}</span>
-                  <h3>{c.t}</h3>
-                  <p><b>Задача:</b> {c.task}<br /><b>Решение:</b> {c.sol}</p>
-                  <p className="case__res">Результат: {c.res}</p>
-                </Reveal>
-              ))}
-            </div>
-          </div>
-        </section>
 
-        <section className="sec sec--alt" id="reviews">
-          <div className="wrap">
-            <Reveal as="p" className="eyebrow">Отзывы</Reveal>
-            <Reveal as="h2">Что говорят клиенты</Reveal>
-            <div className="cards cards--3">
-              {REVIEWS.map((r, i) => (
-                <Reveal as="figure" key={i} className="review">
-                  <div className="review__ph" aria-hidden="true">Фото</div>
-                  <blockquote>«{r.q}»</blockquote>
-                  <figcaption><b>{r.name}</b><span>{r.co}</span></figcaption>
-                  <p className="review__res">Результат: {r.res}</p>
-                </Reveal>
-              ))}
-            </div>
-          </div>
-        </section>
 
         <section className="sec" id="pricing">
           <div className="wrap">
