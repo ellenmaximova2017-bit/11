@@ -2,13 +2,13 @@
 // Приём заявок с сайта: письмо на почту (+ Telegram-бот, когда будет готов).
 // Заполните настройки ниже. Файл исполняется на сервере, посетители видят только результат.
 
-const TO_EMAIL    = '';                          // куда присылать заявки, например info@aipilotmax.ru
+const TO_EMAIL    = 'aipilotmax@gmail.com';                        // куда присылать заявки
 const FROM_EMAIL  = 'noreply@aipilotmax.ru';     // адрес отправителя на вашем домене
 const SITE_NAME   = 'AI Pilot Max';
 
 // Telegram (на будущее): оставьте пустыми, пока бот не создан
 const TG_BOT_TOKEN = '';                         // токен от @BotFather
-const TG_CHAT_ID   = '';                         // id чата или канала, куда писать заявки
+const TG_CHAT_ID   = '343326921';                       // ваш Telegram ID
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
