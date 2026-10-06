@@ -32,7 +32,7 @@ function Header() {
   return (
     <header className={'nav' + (scrolled ? ' scrolled' : '')}>
       <div className="wrap nav__in">
-        <a href="#top" className="logo" aria-label="На главную"><span className="logo__dot" />AI·Бизнес</a>
+        <a href="#top" className="logo" aria-label="На главную"><span className="logo__dot" />Легко AI</a>
         <nav className={'menu' + (open ? ' open' : '')} aria-label="Основное меню" onClick={(e) => e.target.tagName === 'A' && setOpen(false)}>
           {NAV.map(([h, t]) => <a key={h} href={h}>{t}</a>)}
         </nav>
@@ -263,8 +263,8 @@ export default function App() {
 
       <footer className="footer">
         <div className="wrap footer__in">
-          <a href="#top" className="logo"><span className="logo__dot" />AI·Бизнес</a>
-          <p>© {new Date().getFullYear()} Внедрение ИИ в бизнес. Все права защищены.</p>
+          <a href="#top" className="logo"><span className="logo__dot" />Легко AI</a>
+          <p>© {new Date().getFullYear()} Легко AI. Все права защищены.</p>
           <p><a href="#contact">Связаться с нами</a></p>
         </div>
       </footer>
